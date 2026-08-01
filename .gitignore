@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+config.json
+database.json
+venv/
+aegis website/
+prod.env
+master_database.json
+.env.*
