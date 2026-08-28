@@ -254,31 +254,6 @@ The goal is simple:
 
 ---
 
-## 📜 License
-
-Aegis is licensed under the:
-
-[**Aegis Community Source License (ACSL)**](LICENSE)
-
-The license allows:
-
-✅ Learning
-✅ Research
-✅ Forks
-✅ Modifications
-✅ Commercial use
-✅ Competing projects
-
-While requiring:
-
-* Proper attribution
-* Respect for Aegis branding
-* Preservation of accessible defensive protection
-
-See [LICENSE](LICENSE) for full terms.
-
----
-
 ## 💬 Support
 
 For support, bug reports, or questions, join the Aegis Discord community.
