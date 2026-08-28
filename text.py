@@ -177,7 +177,7 @@ class TextDetector:
             if match:
 
                 return {
-                    "detected": False,
+                    "detected": True,
                     "type": "campaign",
                     "campaign": "discord_attachment_scam",
                     "match": match.group(0)

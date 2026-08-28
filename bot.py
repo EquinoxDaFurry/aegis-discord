@@ -48,17 +48,13 @@ text_detector = TextDetector(
 
 
 threats_since_heartbeat = 0
-messages_scanned = 0
 messages_since_heartbeat = 0
 incident_cooldowns = {}
-
 COOLDOWN_SECONDS = 900
-
 IMAGE_SEMAPHORE = asyncio.Semaphore(2)
-
 MAX_IMAGE_SIZE = 3 * 1024 * 1024
-
 BETA_APPLICATION_ID = 1532972276805537792
+LOG_CHANNEL_REFRESH_SECONDS = 3600
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -174,15 +170,7 @@ def user_on_cooldown(guild_id, user_id):
     return True
 
 
-async def find_log_channel(guild):
-
-    cached = bot.log_cache.get(
-        guild.id
-    )
-
-    if cached is not None:
-        return cached
-
+async def find_log_channel_uncached(guild):
 
     for channel in guild.text_channels:
 
@@ -193,14 +181,133 @@ async def find_log_channel(guild):
             and config["logging_identifier"] in topic
         ):
 
-            bot.log_cache[guild.id] = channel
-
             return channel
+
+    return None
+
+async def find_log_channel(guild):
+
+    cached = bot.log_cache.get(
+        guild.id
+    )
+
+    if cached is not None:
+        return cached
+
+
+    channel = await find_log_channel_uncached(
+        guild
+    )
+
+    if channel is not None:
+
+        bot.log_cache[guild.id] = channel
+
+        return channel
 
 
     bot.log_cache[guild.id] = False
 
     return None
+
+
+async def refresh_log_channels():
+
+    for guild in bot.guilds:
+
+        previous = bot.log_cache.get(
+            guild.id
+        )
+
+        channel = await find_log_channel_uncached(
+            guild
+        )
+
+        if channel is None:
+
+            bot.log_cache[guild.id] = False
+
+            continue
+
+
+        bot.log_cache[guild.id] = channel
+
+
+        channel_changed = (
+            previous is not None
+            and previous is not False
+            and previous.id != channel.id
+        )
+
+        newly_detected = (
+            previous is None
+            or previous is False
+        )
+
+
+        if not (
+            newly_detected
+            or channel_changed
+        ):
+
+            continue
+
+
+        embed = discord.Embed(
+            title="📋 Logging Channel Detected",
+            description=(
+                "Aegis Sentinel has detected this channel "
+                "as the server's logging channel.\n\n"
+                "Scam detection logs will be sent here."
+            ),
+            color=discord.Color.green()
+        )
+
+        embed.add_field(
+            name="Server",
+            value=guild.name,
+            inline=False
+        )
+
+        embed.add_field(
+            name="Channel",
+            value=channel.mention,
+            inline=False
+        )
+
+
+        try:
+
+            await channel.send(
+                embed=embed
+            )
+
+            logging.info(
+                f"Logging channel detected for "
+                f"{guild.name}: #{channel.name}"
+            )
+
+        except discord.HTTPException as e:
+
+            report_error(e)
+
+
+async def logging_channel_watcher():
+
+    while True:
+
+        try:
+
+            await refresh_log_channels()
+
+        except Exception as e:
+
+            report_error(e)
+
+
+        await asyncio.sleep(
+            LOG_CHANNEL_REFRESH_SECONDS
+        )
 
 
 async def download_image(url):
@@ -324,12 +431,10 @@ async def handle_scam(
         files = []
 
 
-
     if reason == "image_campaign":
 
         flagged_text = (
             "Image attachment matched a known scam campaign."
-
         )
 
         if image_result:
@@ -505,9 +610,7 @@ async def send_heartbeat():
                     users.add(member.id)
 
 
-
             threats = threats_since_heartbeat
-
 
 
             payload = {
@@ -523,7 +626,6 @@ async def send_heartbeat():
             }
 
 
-
             headers = {
 
                 "Authorization":
@@ -533,7 +635,6 @@ async def send_heartbeat():
                 "application/json"
 
             }
-
 
 
             async with session.post(
@@ -563,7 +664,6 @@ async def send_heartbeat():
         except Exception as e:
 
             report_error(e)
-
 
 
         await asyncio.sleep(300)
@@ -597,7 +697,6 @@ async def on_ready():
         )
 
 
-
     if not hasattr(bot, "heartbeat_task"):
 
         bot.heartbeat_task = asyncio.create_task(
@@ -605,6 +704,11 @@ async def on_ready():
         )
 
 
+    if not hasattr(bot, "logging_channel_task"):
+
+        bot.logging_channel_task = asyncio.create_task(
+            logging_channel_watcher()
+        )
     print(
         f"""
 =========================
@@ -623,7 +727,6 @@ Servers:
     )
 
 
-
 @bot.event
 async def on_error(event, *args, **kwargs):
 
@@ -639,11 +742,8 @@ async def on_error(event, *args, **kwargs):
     )
 
 
-
 @bot.event
 async def on_message(message):
-
-    global messages_scanned
     global messages_since_heartbeat
 
 
@@ -655,16 +755,11 @@ async def on_message(message):
     if message.guild is None:
 
         return
-
-
-
-    messages_scanned += 1
     messages_since_heartbeat += 1
 
     await bot.process_commands(
         message
     )
-
 
 
     try:
@@ -673,7 +768,6 @@ async def on_message(message):
             message.content
         )
 
-
     except Exception as e:
 
         report_error(e)
@@ -681,7 +775,6 @@ async def on_message(message):
         text_result = {
             "detected": False
         }
-
 
 
     if text_result.get("detected"):
@@ -697,14 +790,15 @@ async def on_message(message):
             )
         )
 
+        # Intentionally stop here.
+        # If the message already contains malicious text,
+        # the message is deleted and the image scan is skipped.
+
         return
 
 
-
     flagged = []
-
     highest = None
-
 
 
     async with IMAGE_SEMAPHORE:
@@ -716,7 +810,6 @@ async def on_message(message):
                 content_type = attachment.content_type
 
 
-
                 if not content_type:
 
                     logging.info(
@@ -726,11 +819,9 @@ async def on_message(message):
                     continue
 
 
-
                 if not content_type.startswith("image"):
 
                     continue
-
 
 
                 logging.info(
@@ -738,11 +829,9 @@ async def on_message(message):
                 )
 
 
-
                 image_bytes = await download_image(
                     attachment.url
                 )
-
 
 
                 if not image_bytes:
@@ -750,11 +839,9 @@ async def on_message(message):
                     continue
 
 
-
                 logging.info(
                     "Starting image scan"
                 )
-
 
 
                 try:
@@ -776,7 +863,6 @@ async def on_message(message):
                     )
 
 
-
                 except asyncio.TimeoutError:
 
                     raise RuntimeError(
@@ -784,11 +870,9 @@ async def on_message(message):
                     )
 
 
-
                 logging.info(
                     "Finished image scan"
                 )
-
 
 
                 if result:
@@ -801,21 +885,13 @@ async def on_message(message):
                     )
 
 
-
                     if (
-
                         highest is None
-
                         or result["confidence"]
-
-                        >
-
-                        highest["confidence"]
-
+                        > highest["confidence"]
                     ):
 
                         highest = result
-
 
 
             except Exception as e:
@@ -823,17 +899,12 @@ async def on_message(message):
                 report_error(e)
 
 
-
-
-
     if highest is None:
 
         return
 
 
-
     confidence = highest["confidence"]
-
 
 
     if confidence < config["delete_threshold"]:
@@ -841,21 +912,16 @@ async def on_message(message):
         return
 
 
-
     files = [
 
         discord.File(
-
             io.BytesIO(data),
-
             filename=name
-
         )
 
         for name, data in flagged
 
     ]
-
 
 
     await handle_scam(
@@ -893,7 +959,6 @@ async def stats(ctx, server_number: int = None):
         return
 
 
-
     if server_number is not None:
 
         if (
@@ -908,11 +973,9 @@ async def stats(ctx, server_number: int = None):
             return
 
 
-
         guild = guilds[
             server_number - 1
         ]
-
 
 
         me = (
@@ -921,7 +984,6 @@ async def stats(ctx, server_number: int = None):
                 bot.user.id
             )
         )
-
 
 
         if me is None:
@@ -933,9 +995,7 @@ async def stats(ctx, server_number: int = None):
             return
 
 
-
         invite_url = None
-
 
 
         for channel in guild.text_channels:
@@ -948,7 +1008,6 @@ async def stats(ctx, server_number: int = None):
             if not permissions.create_instant_invite:
 
                 continue
-
 
 
             try:
@@ -966,14 +1025,12 @@ async def stats(ctx, server_number: int = None):
                 break
 
 
-
             except (
                 discord.Forbidden,
                 discord.HTTPException
             ):
 
                 continue
-
 
 
         if invite_url:
@@ -1003,10 +1060,7 @@ async def stats(ctx, server_number: int = None):
         return
 
 
-
-
     users = set()
-
 
 
     for guild in guilds:
@@ -1016,7 +1070,6 @@ async def stats(ctx, server_number: int = None):
             users.add(
                 member.id
             )
-
 
 
     stats_message = (
@@ -1031,9 +1084,7 @@ async def stats(ctx, server_number: int = None):
     )
 
 
-
     lines = []
-
 
 
     for index, guild in enumerate(
@@ -1046,7 +1097,6 @@ async def stats(ctx, server_number: int = None):
         )
 
 
-
     message = (
         "**📋 Server List:**\n\n"
         +
@@ -1054,13 +1104,11 @@ async def stats(ctx, server_number: int = None):
     )
 
 
-
     if len(message) > 2000:
 
         chunks = []
 
         current = ""
-
 
 
         for line in lines:
@@ -1095,13 +1143,11 @@ async def stats(ctx, server_number: int = None):
                 )
 
 
-
         if current:
 
             chunks.append(
                 current
             )
-
 
 
         for index, chunk in enumerate(chunks):
@@ -1128,8 +1174,6 @@ async def stats(ctx, server_number: int = None):
         )
 
 
-
-
 @bot.command()
 async def ping(ctx):
 
@@ -1143,18 +1187,13 @@ async def ping(ctx):
     )
 
 
-
-
 @bot.event
-async def on_shutdown():
+async def on_guild_remove(guild):
 
-    if bot.http_session:
-
-        await bot.http_session.close()
-
-        bot.http_session = None
-
-
+    bot.log_cache.pop(
+        guild.id,
+        None
+    )
 
 
 bot.run(
