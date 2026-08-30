@@ -29,7 +29,7 @@ class ScamDetector:
     )
 
 
-    def __init__(self, database):
+    def __init__(self, database_file="database.aegis"):
 
         self.images = []
         self.sha_index = {}
@@ -39,28 +39,43 @@ class ScamDetector:
 
         self.cache_lock = threading.Lock()
 
-
-        for image in database["images"]:
-
-            self.images.append(
-                (
-                    image["filename"],
-                    int(image["phash"], 16),
-                    int(image["dhash"], 16),
-                    int(image["ahash"], 16),
-                    image["campaign_id"]
-                )
-            )
-
-
-            self.sha_index[image["sha256"]] = {
-                "filename": image["filename"],
-                "campaign": image["campaign_id"]
-            }
+        self.load_database(database_file)
 
 
         self.images = tuple(self.images)
 
+    def load_database(self, filename):
+        """Load image hashes from database.aegis [HASHES] section."""
+        section = None
+        with open(filename, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line == "[RULES]":
+                    section = "RULES"
+                    continue
+                if line == "[HASHES]":
+                    section = "HASHES"
+                    continue
+                if section != "HASHES":
+                    continue
+                # Format: sha256 phash dhash ahash filename
+                parts = line.split()
+                if len(parts) >= 5:
+                    sha256, phash, dhash, ahash, filename = parts[0], parts[1], parts[2], parts[3], " ".join(parts[4:])
+                    self.images.append((
+                        filename,
+                        int(phash, 16),
+                        int(dhash, 16),
+                        int(ahash, 16),
+                        "unknown"  # campaign_id not stored in new format
+                    ))
+                    self.sha_index[sha256] = {
+                        "filename": filename,
+                        "campaign": "unknown"
+                    }
+        logging.info(f"Loaded {len(self.images)} image hashes from database")
 
 
     def sha256(self, data):

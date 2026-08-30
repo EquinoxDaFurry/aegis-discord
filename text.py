@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 class TextDetector:
 
-    def __init__(self, rules_file="antiscam.rules"):
+    def __init__(self, database_file="database.aegis"):
 
         self.words = []
         self.regex = []
@@ -15,12 +15,13 @@ class TextDetector:
         self.urls = []
         self.allow = []
 
-        self.load_rules(rules_file)
+        self.load_rules(database_file)
 
 
     def load_rules(self, filename):
 
         current = None
+        section = None  # "RULES" or "HASHES"
 
         sections = {
             "WORDS": self.words,
@@ -38,6 +39,24 @@ class TextDetector:
                 line = line.strip()
 
                 if not line or line.startswith("#"):
+                    continue
+
+
+                if line == "[RULES]":
+
+                    section = "RULES"
+                    current = None
+                    continue
+
+                if line == "[HASHES]":
+
+                    section = "HASHES"
+                    current = None
+                    continue
+
+
+                if section != "RULES":
+
                     continue
 
 
