@@ -1,16 +1,10 @@
 import os
 import sys
 import shutil
-import hashlib
 import subprocess
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
-
-
-# ============================================================
-# Aegis Bootstrap Loader
-# ============================================================
 
 REPO_OWNER = "EquinoxDaFurry"
 REPO_NAME = "aegis-discord"
@@ -32,23 +26,8 @@ GITHUB_ARCHIVE = (
     f"/archive/refs/heads/{REPO_BRANCH}.zip"
 )
 
-REQUIREMENTS_URL = (
-    f"https://raw.githubusercontent.com/"
-    f"{REPO_OWNER}/{REPO_NAME}/{REPO_BRANCH}/requirements.txt"
-)
-
-
-# ------------------------------------------------------------
-# Logging
-# ------------------------------------------------------------
-
 def log(message):
     print(f"[Aegis Loader] {message}", flush=True)
-
-
-# ------------------------------------------------------------
-# Download helper
-# ------------------------------------------------------------
 
 def download(url, destination):
     log(f"Downloading: {url}")
@@ -66,20 +45,10 @@ def download(url, destination):
 
     log(f"Downloaded: {destination}")
 
-
-# ------------------------------------------------------------
-# Clean directories
-# ------------------------------------------------------------
-
 def remove_directory(path):
     if path.exists():
         log(f"Removing {path}")
         shutil.rmtree(path)
-
-
-# ------------------------------------------------------------
-# Download repository
-# ------------------------------------------------------------
 
 def download_repository():
     remove_directory(DOWNLOAD_DIR)
@@ -109,7 +78,6 @@ def download_repository():
         )
 
     repository_root = extracted[0]
-
     staged_runtime = DOWNLOAD_DIR / "runtime"
 
     shutil.copytree(
@@ -117,33 +85,22 @@ def download_repository():
         staged_runtime
     )
 
-    # --------------------------------------------------------
-    # Remove files that must NOT be deployed
-    # --------------------------------------------------------
-
     git_dir = staged_runtime / ".git"
 
     if git_dir.exists():
         remove_directory(git_dir)
 
-    # .env must NEVER come from GitHub.
     staged_env = staged_runtime / ".env"
 
     if staged_env.exists():
         staged_env.unlink()
 
-    # config.json is intentionally server-specific.
     staged_config = staged_runtime / "config.json"
 
     if staged_config.exists():
         staged_config.unlink()
 
     return staged_runtime
-
-
-# ------------------------------------------------------------
-# Validate runtime
-# ------------------------------------------------------------
 
 def validate_runtime(runtime):
     log("Validating downloaded Aegis runtime...")
@@ -174,7 +131,6 @@ def validate_runtime(runtime):
             "/home/container/config.json is missing."
         )
 
-    # Compile Python files before deployment.
     log("Compiling Python files...")
 
     result = subprocess.run(
@@ -196,11 +152,6 @@ def validate_runtime(runtime):
         )
 
     log("Runtime validation passed.")
-
-
-# ------------------------------------------------------------
-# Install dependencies
-# ------------------------------------------------------------
 
 def install_requirements(runtime):
     requirements = runtime / "requirements.txt"
@@ -229,18 +180,11 @@ def install_requirements(runtime):
 
     log("Dependencies installed.")
 
-
-# ------------------------------------------------------------
-# Deploy runtime
-# ------------------------------------------------------------
-
 def deploy(runtime):
     log("Preparing deployment...")
 
-    # Remove an old cache if one somehow exists.
     remove_directory(CACHE_DIR)
 
-    # Move current runtime into cache.
     if RUNTIME_DIR.exists():
         log("Moving current runtime to cache...")
         RUNTIME_DIR.rename(CACHE_DIR)
@@ -260,10 +204,20 @@ def deploy(runtime):
 
     log("New Aegis runtime deployed.")
 
+def copy_configuration():
+    log("Copying persistent configuration...")
 
-# ------------------------------------------------------------
-# Start Aegis
-# ------------------------------------------------------------
+    shutil.copy2(
+        ENV_FILE,
+        RUNTIME_DIR / ".env"
+    )
+
+    shutil.copy2(
+        CONFIG_FILE,
+        RUNTIME_DIR / "config.json"
+    )
+
+    log("Persistent configuration copied.")
 
 def start_aegis():
     log("Starting Aegis...")
@@ -278,11 +232,6 @@ def start_aegis():
         ]
     )
 
-
-# ------------------------------------------------------------
-# Rollback
-# ------------------------------------------------------------
-
 def rollback():
     log("Attempting rollback...")
 
@@ -291,6 +240,8 @@ def rollback():
 
     if CACHE_DIR.exists():
         CACHE_DIR.rename(RUNTIME_DIR)
+
+        copy_configuration()
 
         log("Previous Aegis runtime restored.")
 
@@ -302,47 +253,23 @@ def rollback():
         "Aegis could not be updated and no backup exists."
     )
 
-
-# ------------------------------------------------------------
-# Main
-# ------------------------------------------------------------
-
 def main():
-
     log("========================================")
     log("        AEGIS BOOTSTRAP LOADER")
     log("========================================")
 
     try:
-
-        # ----------------------------------------------------
-        # Download fresh repository
-        # ----------------------------------------------------
-
         staged_runtime = download_repository()
-
-        # ----------------------------------------------------
-        # Validate before touching current installation
-        # ----------------------------------------------------
 
         validate_runtime(staged_runtime)
 
-        # ----------------------------------------------------
-        # Install dependencies
-        # ----------------------------------------------------
-
         install_requirements(staged_runtime)
-
-        # ----------------------------------------------------
-        # Deploy
-        # ----------------------------------------------------
 
         deploy(staged_runtime)
 
-
+        copy_configuration()
 
         remove_directory(DOWNLOAD_DIR)
-
 
         start_aegis()
 
@@ -361,6 +288,7 @@ def main():
 
         if CACHE_DIR.exists():
             CACHE_DIR.rename(RUNTIME_DIR)
+            copy_configuration()
             start_aegis()
 
         log("No usable Aegis installation exists.")
@@ -380,7 +308,6 @@ def main():
             rollback()
 
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
