@@ -1,2 +1,2 @@
-# Aegis
-so this is the readme for aegis, uhhh i lowk need to redo it since the project has changed quite dramatically, but uhhh new readme soon i guess
+# Aegis Beta Branch
+This is the beta version of Aegis, this code is likely ***Not to work*** and ***subject to change*** please change branch to main to see current code
