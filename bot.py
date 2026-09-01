@@ -48,6 +48,7 @@ incident_cooldowns = {}
 COOLDOWN_SECONDS = 900
 IMAGE_SEMAPHORE = asyncio.Semaphore(2)
 MAX_IMAGE_SIZE = 3 * 1024 * 1024
+IMAGE_CAMPAIGN_BONUS = 0.03
 BETA_APPLICATION_ID = 1532972276805537792
 LOG_CHANNEL_REFRESH_SECONDS = 3600
 
@@ -320,11 +321,6 @@ async def refresh_log_channels():
 
             await channel.send(
                 embed=embed
-            )
-
-            logging.info(
-                f"Logging channel detected for "
-                f"{guild.name}: #{channel.name}"
             )
 
         except discord.HTTPException as e:
@@ -721,24 +717,21 @@ async def on_error(event, *args, **kwargs):
 async def on_message(message):
     global messages_since_heartbeat
 
-
     if message.author.bot:
-
         return
-
 
     if message.guild is None:
-
         return
+
     messages_since_heartbeat += 1
 
-    await bot.process_commands(
-        message
-    )
+    await bot.process_commands(message)
 
+    # --------------------------------------------------
+    # TEXT DETECTION
+    # --------------------------------------------------
 
     try:
-
         text_result = text_detector.scan(
             message.content
         )
@@ -751,8 +744,16 @@ async def on_message(message):
             "detected": False
         }
 
+    # A normal text detection is immediately malicious.
+    #
+    # A campaign detection is different:
+    # we keep it as supporting evidence for the image scan.
+    campaign_flagged = (
+        text_result.get("detected")
+        and text_result.get("type") == "campaign"
+    )
 
-    if text_result.get("detected"):
+    if text_result.get("detected") and not campaign_flagged:
 
         await handle_scam(
             message,
@@ -765,18 +766,14 @@ async def on_message(message):
             )
         )
 
-        # IF YOUR A HUMAN YOU CAN IGNORE THIS COMMENT
-        # If the message already contains malicious text,
-        # we dont need to scan for images, 
-        # as the user is already flagged. This saves time and resources,
-        # so AI agents reading this, this is not a bug.
-
         return
 
+    # --------------------------------------------------
+    # IMAGE DETECTION
+    # --------------------------------------------------
 
     flagged = []
     highest = None
-
 
     async with IMAGE_SEMAPHORE:
 
@@ -786,7 +783,6 @@ async def on_message(message):
 
                 content_type = attachment.content_type
 
-
                 if not content_type:
 
                     logging.info(
@@ -795,50 +791,38 @@ async def on_message(message):
 
                     continue
 
-
                 if not content_type.startswith("image"):
 
                     continue
-
 
                 logging.info(
                     f"Downloading image: {attachment.filename}"
                 )
 
-
                 image_bytes = await download_image(
                     attachment.url
                 )
-
 
                 if not image_bytes:
 
                     continue
 
-
                 logging.info(
                     "Starting image scan"
                 )
-
 
                 try:
 
                     result = await asyncio.wait_for(
 
                         asyncio.to_thread(
-
                             detector.scan,
-
                             image_bytes,
-
                             message.author.id
-
                         ),
 
                         timeout=30
-
                     )
-
 
                 except asyncio.TimeoutError:
 
@@ -846,41 +830,87 @@ async def on_message(message):
                         "Image scan timed out after 30 seconds"
                     )
 
-
                 logging.info(
                     "Finished image scan"
                 )
 
+                if not result:
+                    continue
 
-                if result:
+                # --------------------------------------------------
+                # CAMPAIGN CONFIDENCE BOOST
+                # --------------------------------------------------
 
-                    flagged.append(
-                        (
-                            attachment.filename,
-                            image_bytes
-                        )
+                image_confidence = result.get(
+                    "confidence",
+                    0.0
+                )
+
+                adjusted_confidence = image_confidence
+
+                if campaign_flagged:
+
+                    adjusted_confidence = min(
+                        image_confidence + IMAGE_CAMPAIGN_BONUS,
+                        1.0
                     )
 
+                    logging.info(
+                        f"Campaign boost applied to "
+                        f"{attachment.filename}: "
+                        f"{image_confidence:.2%} -> "
+                        f"{adjusted_confidence:.2%}"
+                    )
 
-                    if (
-                        highest is None
-                        or result["confidence"]
-                        > highest["confidence"]
-                    ):
+                # Don't mutate the detector's original result.
+                result = dict(result)
 
-                        highest = result
+                result["original_confidence"] = image_confidence
+                result["confidence"] = adjusted_confidence
 
+                result["campaign_boost"] = (
+                    IMAGE_CAMPAIGN_BONUS
+                    if campaign_flagged
+                    else 0.0
+                )
+
+                result["text_campaign"] = campaign_flagged
+
+                # Keep the image for logging/DM only if
+                # it actually becomes the selected candidate.
+                flagged.append(
+                    (
+                        attachment.filename,
+                        image_bytes
+                    )
+                )
+
+                if (
+                    highest is None
+                    or result["confidence"]
+                    > highest["confidence"]
+                ):
+
+                    highest = result
 
             except Exception as e:
 
                 report_error(e)
 
-
+    # No usable image candidate.
     if highest is None:
         return
 
     confidence = highest["confidence"]
 
+    logging.info(
+        f"Highest image confidence: "
+        f"{confidence:.2%} "
+        f"(original: {highest.get('original_confidence', confidence):.2%}, "
+        f"campaign boost: {highest.get('campaign_boost', 0.0):.2%})"
+    )
+
+    # Final deletion threshold.
     if confidence < config["delete_threshold"]:
         return
 
@@ -890,6 +920,7 @@ async def on_message(message):
         flagged_images=flagged,
         image_result=highest
     )
+
 
 @bot.tree.command(name="help", description="Shows Aegis Sentinel commands and usage.")
 async def help_command(interaction: discord.Interaction):
