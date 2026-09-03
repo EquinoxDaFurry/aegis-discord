@@ -17,90 +17,117 @@ from hash import ScamDetector, DEBUG_USER_ID
 from text import TextDetector
 
 
+# ============================================================
+# ENVIRONMENT / CONFIG
+# ============================================================
+
 load_dotenv()
 
 TOKEN = os.getenv("BOT")
-
 WEBSITE_API = os.getenv("WEBSITE_API")
 API_KEY = os.getenv("API_KEY")
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-
-discord.utils.setup_logging(level=logging.INFO)
 
 
 with open("config.json", "r") as f:
     config = json.load(f)
 
 
-detector = ScamDetector("database.aegis")
+# ============================================================
+# DETECTORS
+# ============================================================
 
+detector = ScamDetector("database.aegis")
 text_detector = TextDetector("database.aegis")
 
 
+# ============================================================
+# GLOBAL STATE
+# ============================================================
+
 threats_since_heartbeat = 0
 messages_since_heartbeat = 0
+
 incident_cooldowns = {}
+
 COOLDOWN_SECONDS = 900
+
 IMAGE_SEMAPHORE = asyncio.Semaphore(2)
 MAX_IMAGE_SIZE = 3 * 1024 * 1024
+
+IMAGE_CAMPAIGN_BONUS = 0.03
+
 BETA_APPLICATION_ID = 1532972276805537792
+
 LOG_CHANNEL_REFRESH_SECONDS = 3600
 
+
+# ============================================================
+# DISCORD BOT
+# ============================================================
+
 intents = discord.Intents.default()
+
 intents.message_content = True
 intents.guilds = True
 intents.members = True
-
 
 bot = commands.Bot(
     command_prefix="!",
     intents=intents
 )
 
-
 bot.log_cache = {}
+bot.update_cache = {}
 bot.http_session = None
 
+
+# ============================================================
+# ERROR HANDLING
+# ============================================================
 
 async def send_error_dm(error_text):
 
     try:
-        user = bot.get_user(DEBUG_USER_ID)
 
-        if user is None:
-            user = await bot.fetch_user(DEBUG_USER_ID)
-
-        await user.send(
-            f"🚨 AntiScam Bot Error\n\n```py\n{error_text[:1900]}\n```"
+        user = await bot.fetch_user(
+            DEBUG_USER_ID
         )
+
+        if user:
+
+            await user.send(
+                f"⚠️ **Bot Error**\n\n```text\n"
+                f"{error_text[:1900]}\n```"
+            )
 
     except Exception:
-        logging.exception(
-            "Failed to send error DM"
-        )
+
+        pass
 
 
 def report_error(error):
 
-    text = "".join(
-        traceback.format_exception(
-            type(error),
-            error,
-            error.__traceback__
+    logging.error(
+        "Unhandled error:\n%s",
+        traceback.format_exc()
+    )
+
+    try:
+
+        asyncio.create_task(
+            send_error_dm(
+                f"{type(error).__name__}: {error}"
+            )
         )
-    )
 
-    logging.error(text)
+    except Exception:
 
-    asyncio.create_task(
-        send_error_dm(text)
-    )
+        pass
 
+
+# ============================================================
+# HTTP SESSION
+# ============================================================
 
 async def get_http_session():
 
@@ -109,115 +136,110 @@ async def get_http_session():
         or bot.http_session.closed
     ):
 
-        bot.http_session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(
-                total=20
-            )
-        )
-
-        logging.info(
-            "Created HTTP session"
-        )
+        bot.http_session = aiohttp.ClientSession()
 
     return bot.http_session
 
 
-def user_on_cooldown(guild_id, user_id):
+# ============================================================
+# COOLDOWN
+# ============================================================
 
-    now = datetime.now(timezone.utc)
-
-    expired = [
-        key
-        for key, timestamp in incident_cooldowns.items()
-        if (
-            now - timestamp
-        ).total_seconds() > COOLDOWN_SECONDS * 2
-    ]
-
-    for key in expired:
-        del incident_cooldowns[key]
+def user_on_cooldown(
+    guild_id,
+    user_id
+):
 
     key = (
         guild_id,
         user_id
     )
 
-    timestamp = incident_cooldowns.get(
+    now = datetime.now(
+        timezone.utc
+    ).timestamp()
+
+    last_time = incident_cooldowns.get(
         key
     )
 
-    if timestamp is None:
+    if last_time is not None:
 
-        incident_cooldowns[key] = now
+        if now - last_time < COOLDOWN_SECONDS:
 
-        return False
+            return True
 
+    incident_cooldowns[key] = now
 
-    if (
-        now - timestamp
-    ).total_seconds() >= COOLDOWN_SECONDS:
-
-        incident_cooldowns[key] = now
-
-        return False
+    return False
 
 
-    return True
+# ============================================================
+# LOGGING CHANNEL
+# ============================================================
 
+async def find_log_channel_uncached(
+    guild
+):
 
-async def find_log_channel_uncached(guild):
+    identifier = config[
+        "logging_identifier"
+    ]
 
     for channel in guild.text_channels:
 
-        topic = channel.topic
-
         if (
-            topic
-            and config["logging_identifier"] in topic
+            channel.topic
+            and identifier in channel.topic
         ):
 
             return channel
 
     return None
 
-async def find_log_channel(guild):
 
-    cached = bot.log_cache.get(
-        guild.id
-    )
+async def find_log_channel(
+    guild
+):
 
-    if cached is not None:
-        return cached
+    if guild.id in bot.log_cache:
 
+        channel = guild.get_channel(
+            bot.log_cache[guild.id]
+        )
+
+        if channel:
+
+            return channel
 
     channel = await find_log_channel_uncached(
         guild
     )
 
-    if channel is not None:
+    if channel:
 
-        bot.log_cache[guild.id] = channel
+        bot.log_cache[guild.id] = channel.id
 
-        return channel
-
-
-    bot.log_cache[guild.id] = False
-
-    return None
+    return channel
 
 
-bot.update_cache = {}
+# ============================================================
+# UPDATE CHANNEL
+# ============================================================
 
+async def find_update_channel_uncached(
+    guild
+):
 
-async def find_update_channel_uncached(guild):
+    identifier = config[
+        "update_identifier"
+    ]
 
     for channel in guild.text_channels:
 
-        topic = channel.topic
-
         if (
-            topic
-            and config.get("update_identifier") in topic
+            channel.topic
+            and identifier in channel.topic
         ):
 
             return channel
@@ -225,116 +247,86 @@ async def find_update_channel_uncached(guild):
     return None
 
 
-async def find_update_channel(guild):
+async def find_update_channel(
+    guild
+):
 
-    cached = bot.update_cache.get(
-        guild.id
-    )
+    if guild.id in bot.update_cache:
 
-    if cached is not None:
-        return cached
+        channel = guild.get_channel(
+            bot.update_cache[guild.id]
+        )
 
+        if channel:
+
+            return channel
 
     channel = await find_update_channel_uncached(
         guild
     )
 
-    if channel is not None:
+    if channel:
 
-        bot.update_cache[guild.id] = channel
+        bot.update_cache[guild.id] = channel.id
 
-        return channel
+    return channel
 
 
-    bot.update_cache[guild.id] = False
-
-    return None
-
+# ============================================================
+# LOGGING CHANNEL WATCHER
+# ============================================================
 
 async def refresh_log_channels():
 
     for guild in bot.guilds:
 
-        previous = bot.log_cache.get(
-            guild.id
-        )
-
-        channel = await find_log_channel_uncached(
-            guild
-        )
-
-        if channel is None:
-
-            bot.log_cache[guild.id] = False
-
-            continue
-
-
-        bot.log_cache[guild.id] = channel
-
-
-        channel_changed = (
-            previous is not None
-            and previous is not False
-            and previous.id != channel.id
-        )
-
-        newly_detected = (
-            previous is None
-            or previous is False
-        )
-
-
-        if not (
-            newly_detected
-            or channel_changed
-        ):
-
-            continue
-
-
-        embed = discord.Embed(
-            title="📋 Logging Channel Detected",
-            description=(
-                "Aegis Sentinel has detected this channel "
-                "as the server's logging channel.\n\n"
-                "Scam detection logs will be sent here."
-            ),
-            color=discord.Color.green()
-        )
-
-        embed.add_field(
-            name="Server",
-            value=guild.name,
-            inline=False
-        )
-
-        embed.add_field(
-            name="Channel",
-            value=channel.mention,
-            inline=False
-        )
-
-
         try:
 
-            await channel.send(
-                embed=embed
+            old_id = bot.log_cache.get(
+                guild.id
             )
 
-            logging.info(
-                f"Logging channel detected for "
-                f"{guild.name}: #{channel.name}"
+            channel = await find_log_channel_uncached(
+                guild
             )
 
-        except discord.HTTPException as e:
+            if channel:
+
+                bot.log_cache[guild.id] = (
+                    channel.id
+                )
+
+                if old_id != channel.id:
+
+                    try:
+
+                        embed = discord.Embed(
+                            title="📋 Logging Channel Detected",
+                            description=(
+                                "This channel has been detected "
+                                "as the bot's logging channel."
+                            ),
+                            color=discord.Color.blue()
+                        )
+
+                        await channel.send(
+                            embed=embed
+                        )
+
+                    except discord.HTTPException as e:
+
+                        report_error(e)
+
+        except Exception as e:
 
             report_error(e)
 
 
 async def logging_channel_watcher():
 
-    while True:
+    await bot.wait_until_ready()
+
+    while not bot.is_closed():
 
         try:
 
@@ -344,58 +336,51 @@ async def logging_channel_watcher():
 
             report_error(e)
 
-
         await asyncio.sleep(
             LOG_CHANNEL_REFRESH_SECONDS
         )
 
 
-async def download_image(url):
+# ============================================================
+# IMAGE DOWNLOADING
+# ============================================================
+
+async def download_image(
+    url
+):
+
+    session = await get_http_session()
 
     try:
 
-        session = await get_http_session()
-
-        async with session.get(url) as response:
+        async with session.get(
+            url,
+            timeout=aiohttp.ClientTimeout(
+                total=15
+            )
+        ) as response:
 
             if response.status != 200:
 
-                logging.warning(
-                    f"Image download failed HTTP {response.status}"
-                )
+                return None
+
+            content_length = response.headers.get(
+                "Content-Length"
+            )
+
+            if content_length:
+
+                if int(content_length) > MAX_IMAGE_SIZE:
+
+                    return None
+
+            data = await response.read()
+
+            if len(data) > MAX_IMAGE_SIZE:
 
                 return None
 
-
-            if response.content_length:
-
-                if response.content_length > MAX_IMAGE_SIZE:
-
-                    logging.warning(
-                        "Image too large"
-                    )
-
-                    return None
-
-
-            data = bytearray()
-
-
-            async for chunk in response.content.iter_chunked(8192):
-
-                data.extend(chunk)
-
-                if len(data) > MAX_IMAGE_SIZE:
-
-                    logging.warning(
-                        "Image exceeded limit"
-                    )
-
-                    return None
-
-
-            return bytes(data)
-
+            return data
 
     except Exception as e:
 
@@ -404,6 +389,470 @@ async def download_image(url):
         return None
 
 
+# ============================================================
+# FALSE POSITIVE MODAL
+# ============================================================
+
+class FalsePositiveModal(
+    discord.ui.Modal,
+    title="Mark as False Positive"
+):
+
+    reason = discord.ui.TextInput(
+        label="Why was this a false positive?",
+        placeholder=(
+            "Explain why you believe the bot "
+            "incorrectly flagged this content..."
+        ),
+        style=discord.TextStyle.paragraph,
+        required=True,
+        max_length=1000
+    )
+
+    def __init__(
+        self,
+        data,
+        parent_view
+    ):
+
+        super().__init__()
+
+        self.data = data
+        self.parent_view = parent_view
+
+    async def on_submit(
+        self,
+        interaction: discord.Interaction
+    ):
+
+        # ----------------------------------------------------
+        # IMPORTANT:
+        #
+        # There is intentionally NO DEBUG_USER_ID
+        # permission check here.
+        #
+        # Anyone who can access the logging channel
+        # can submit a false-positive report.
+        # ----------------------------------------------------
+
+        # ----------------------------------------------------
+        # Prevent duplicate submissions
+        # ----------------------------------------------------
+
+        if self.parent_view.submitted:
+
+            await interaction.response.send_message(
+                "⚠️ This false positive has already "
+                "been submitted.",
+                ephemeral=True
+            )
+
+            return
+
+        self.parent_view.submitted = True
+
+        # ----------------------------------------------------
+        # Get configured channel
+        # ----------------------------------------------------
+
+        channel_id = config.get(
+            "false_positive_channel_id"
+        )
+
+        if not channel_id:
+
+            self.parent_view.submitted = False
+
+            await interaction.response.send_message(
+                "❌ `false_positive_channel_id` is not "
+                "configured in `config.json`.",
+                ephemeral=True
+            )
+
+            return
+
+        try:
+
+            channel_id = int(
+                channel_id
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            self.parent_view.submitted = False
+
+            await interaction.response.send_message(
+                "❌ `false_positive_channel_id` in "
+                "`config.json` is invalid.",
+                ephemeral=True
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # Find channel
+        # ----------------------------------------------------
+
+        channel = bot.get_channel(
+            channel_id
+        )
+
+        if channel is None:
+
+            try:
+
+                channel = await bot.fetch_channel(
+                    channel_id
+                )
+
+            except discord.HTTPException as e:
+
+                self.parent_view.submitted = False
+
+                report_error(e)
+
+                await interaction.response.send_message(
+                    "❌ I couldn't access the configured "
+                    "false-positive channel.",
+                    ephemeral=True
+                )
+
+                return
+
+        # ----------------------------------------------------
+        # Build report
+        # ----------------------------------------------------
+
+        data = self.data
+
+        embed = discord.Embed(
+            title="🟡 False Positive Report",
+            description=(
+                "A scam detection was manually marked "
+                "as a false positive."
+            ),
+            color=discord.Color.gold(),
+            timestamp=datetime.now(
+                timezone.utc
+            )
+        )
+
+        # ----------------------------------------------------
+        # User
+        # ----------------------------------------------------
+
+        embed.add_field(
+            name="User",
+            value=(
+                f"{data['user_mention']}\n"
+                f"`{data['user_id']}`"
+            ),
+            inline=False
+        )
+
+        # ----------------------------------------------------
+        # Server
+        # ----------------------------------------------------
+
+        embed.add_field(
+            name="Server",
+            value=(
+                f"{data['guild_name']}\n"
+                f"`{data['guild_id']}`"
+            ),
+            inline=False
+        )
+
+        # ----------------------------------------------------
+        # Channel
+        # ----------------------------------------------------
+
+        embed.add_field(
+            name="Channel",
+            value=data["channel_name"],
+            inline=False
+        )
+
+        # ----------------------------------------------------
+        # Detection reason
+        # ----------------------------------------------------
+
+        embed.add_field(
+            name="Detection Reason",
+            value=data["reason"],
+            inline=False
+        )
+
+        # ----------------------------------------------------
+        # Flagged content
+        # ----------------------------------------------------
+
+        flagged_content = data.get(
+            "flagged_content"
+        )
+
+        if flagged_content:
+
+            flagged_content = (
+                flagged_content.replace(
+                    "```",
+                    "'''"
+                )
+            )
+
+            embed.add_field(
+                name="Flagged Content",
+                value=(
+                    f"```text\n"
+                    f"{flagged_content[:1000]}\n"
+                    f"```"
+                ),
+                inline=False
+            )
+
+        # ----------------------------------------------------
+        # Image detection information
+        # ----------------------------------------------------
+
+        image_result = data.get(
+            "image_result"
+        )
+
+        if image_result:
+
+            confidence = image_result.get(
+                "confidence"
+            )
+
+            original_confidence = (
+                image_result.get(
+                    "original_confidence"
+                )
+            )
+
+            if confidence is not None:
+
+                embed.add_field(
+                    name="Confidence",
+                    value=f"{confidence:.2%}"
+                )
+
+            if original_confidence is not None:
+
+                embed.add_field(
+                    name="Original Confidence",
+                    value=(
+                        f"{original_confidence:.2%}"
+                    )
+                )
+
+            campaign_boost = image_result.get(
+                "campaign_boost"
+            )
+
+            if campaign_boost:
+
+                embed.add_field(
+                    name="Campaign Bonus",
+                    value=f"+{campaign_boost:.2%}"
+                )
+
+        # ----------------------------------------------------
+        # Explanation
+        # ----------------------------------------------------
+
+        embed.add_field(
+            name="Why was this a false positive?",
+            value=self.reason.value[:1000],
+            inline=False
+        )
+
+        # ----------------------------------------------------
+        # Person who reported it
+        # ----------------------------------------------------
+
+        embed.add_field(
+            name="Marked By",
+            value=(
+                f"{interaction.user.mention}\n"
+                f"`{interaction.user.id}`"
+            ),
+            inline=False
+        )
+
+        # ----------------------------------------------------
+        # Original message
+        # ----------------------------------------------------
+
+        message_url = data.get(
+            "message_url"
+        )
+
+        if message_url:
+
+            embed.add_field(
+                name="Original Message",
+                value=message_url,
+                inline=False
+            )
+
+        # ----------------------------------------------------
+        # Files
+        # ----------------------------------------------------
+
+        files = []
+
+        for name, image_data in data.get(
+            "flagged_images",
+            []
+        ):
+
+            files.append(
+                discord.File(
+                    io.BytesIO(image_data),
+                    filename=name
+                )
+            )
+
+        # ----------------------------------------------------
+        # Send report
+        # ----------------------------------------------------
+
+        try:
+
+            await channel.send(
+                embed=embed,
+                files=files
+            )
+
+        except discord.HTTPException as e:
+
+            self.parent_view.submitted = False
+
+            report_error(e)
+
+            await interaction.response.send_message(
+                "❌ Failed to send the false-positive report.",
+                ephemeral=True
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # Disable button
+        # ----------------------------------------------------
+
+        self.parent_view.false_positive_button.disabled = (
+            True
+        )
+
+        self.parent_view.false_positive_button.label = (
+            "False Positive Submitted"
+        )
+
+        self.parent_view.false_positive_button.emoji = (
+            "✅"
+        )
+
+        try:
+
+            await interaction.message.edit(
+                view=self.parent_view
+            )
+
+        except discord.HTTPException as e:
+
+            report_error(e)
+
+        # ----------------------------------------------------
+        # Confirmation
+        # ----------------------------------------------------
+
+        await interaction.response.send_message(
+            "✅ False-positive report submitted.",
+            ephemeral=True
+        )
+
+
+# ============================================================
+# FALSE POSITIVE BUTTON
+# ============================================================
+
+class FalsePositiveView(
+    discord.ui.View
+):
+
+    def __init__(
+        self,
+        false_positive_data
+    ):
+
+        super().__init__(
+            timeout=None
+        )
+
+        self.false_positive_data = (
+            false_positive_data
+        )
+
+        self.submitted = False
+
+    @discord.ui.button(
+        label="False Positive",
+        emoji="⚠️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="aegis_false_positive"
+    )
+    async def false_positive_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        # ----------------------------------------------------
+        # IMPORTANT:
+        #
+        # There is intentionally NO DEBUG_USER_ID check.
+        #
+        # Anyone who can see the logging message can
+        # press this button.
+        # ----------------------------------------------------
+
+        # ----------------------------------------------------
+        # Already submitted
+        # ----------------------------------------------------
+
+        if self.submitted:
+
+            await interaction.response.send_message(
+                "⚠️ This detection has already been "
+                "marked as a false positive.",
+                ephemeral=True
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # Open modal
+        # ----------------------------------------------------
+
+        modal = FalsePositiveModal(
+            self.false_positive_data,
+            self
+        )
+
+        await interaction.response.send_modal(
+            modal
+        )
+
+
+# ============================================================
+# SCAM HANDLER
+# ============================================================
+
 async def handle_scam(
     message,
     reason,
@@ -411,331 +860,622 @@ async def handle_scam(
     flagged_images=None,
     image_result=None
 ):
-    """
-    Handle scam detection: delete message, timeout user, send DM, log to channel.
-    
-    Args:
-        flagged_images: List of (filename, image_bytes) tuples for image scams.
-                       If None, no files are sent.
-    """
+
     global threats_since_heartbeat
 
     threats_since_heartbeat += 1
 
+    # --------------------------------------------------------
+    # Delete message
+    # --------------------------------------------------------
+
     try:
+
         await message.delete()
+
         deleted = True
+
     except discord.HTTPException as e:
+
         report_error(e)
+
         deleted = False
 
-    if user_on_cooldown(message.guild.id, message.author.id):
+    # --------------------------------------------------------
+    # Cooldown
+    # --------------------------------------------------------
+
+    if user_on_cooldown(
+        message.guild.id,
+        message.author.id
+    ):
+
         return
 
-    timeout_status = "Timed out successfully"
+    # --------------------------------------------------------
+    # Timeout user
+    # --------------------------------------------------------
+
+    timeout_status = (
+        "Timed out successfully"
+    )
 
     try:
+
         await message.author.timeout(
-            timedelta(days=config["timeout_days"]),
+            timedelta(
+                days=config["timeout_days"]
+            ),
             reason="Scam detected"
         )
+
     except discord.Forbidden:
-        timeout_status = "⚠️ Unable to timeout user (missing permissions or role hierarchy)"
+
+        timeout_status = (
+            "⚠️ Unable to timeout user "
+            "(missing permissions or role hierarchy)"
+        )
+
     except discord.HTTPException as e:
+
         report_error(e)
-        timeout_status = "⚠️ Discord API error while timing out"
+
+        timeout_status = (
+            "⚠️ Discord API error while timing out"
+        )
+
+    # --------------------------------------------------------
+    # Determine flagged content
+    # --------------------------------------------------------
 
     if reason == "image_campaign":
-        flagged_text = "Image attachment matched a known scam campaign."
+
+        flagged_text = (
+            "Image attachment matched a known "
+            "scam campaign."
+        )
+
         if image_result:
-            flagged_text += f"\nConfidence: {image_result['confidence']:.2%}"
+
+            confidence = image_result.get(
+                "confidence"
+            )
+
+            if confidence is not None:
+
+                flagged_text += (
+                    f"\nConfidence: {confidence:.2%}"
+                )
+
     else:
-        flagged_text = match[:1000] if match else "Unknown"
+
+        flagged_text = (
+            match[:1000]
+            if match
+            else "Unknown"
+        )
+
+    # --------------------------------------------------------
+    # DM user
+    # --------------------------------------------------------
 
     dm_text = f"""
-Hello {message.author.mention},
+🚨 **Scam Detected**
 
-⚠️ **Security Alert**
+Your message was detected as possible scam content.
 
-Your account sent content commonly associated with scam campaigns.
+**Server:** {message.guild.name}
+**Channel:** {message.channel.name}
 
-Your account may have been compromised.
+**Reason:** {reason}
 
-Please:
+**Flagged Content:**
+{flagged_text[:1500]}
 
-🔒 Reset your Discord password
-🛡️ Enable Two-Factor Authentication
-🦠 Run malware scans
-🔗 Review Authorized Apps
+Your message has been removed and you may have been timed out.
 
+If you believe this was a mistake, please contact the server staff.
 
-You have been timed out in:
+Report server:
+{config.get("dm_report_server", "Not configured")}
+""".strip()
 
-**{message.guild.name}**
-
-for **{config["timeout_days"]} days**.
-
-
-Detected location:
-
-{message.channel.mention}
-
-
-Flagged Content:
-
-```text
-{flagged_text}```
-
-
-If this was a mistake:
-
-{config["dm_report_server"]}
-
-
-Please include:
-- The flagged message
-- What you intended to send
-- Any useful investigation details
-
-
--# Anti-Scam Protection System
-"""
+    # --------------------------------------------------------
+    # DM attachments
+    # --------------------------------------------------------
 
     dm_files = [
-        discord.File(io.BytesIO(data), filename=name)
-        for name, data in (flagged_images or [])
+        discord.File(
+            io.BytesIO(data),
+            filename=name
+        )
+
+        for name, data in (
+            flagged_images or []
+        )
     ]
 
     try:
-        await message.author.send(content=dm_text, files=dm_files)
+
+        await message.author.send(
+            content=dm_text,
+            files=dm_files
+        )
+
     except discord.HTTPException as e:
+
         report_error(e)
 
+    # --------------------------------------------------------
+    # Prepare log files
+    # --------------------------------------------------------
+
     log_files = [
-        discord.File(io.BytesIO(data), filename=name)
-        for name, data in (flagged_images or [])
+        discord.File(
+            io.BytesIO(data),
+            filename=name
+        )
+
+        for name, data in (
+            flagged_images or []
+        )
     ]
 
-    log_channel = await find_log_channel(message.guild)
+    # --------------------------------------------------------
+    # Find logging channel
+    # --------------------------------------------------------
 
-    if log_channel:
-        embed = discord.Embed(
-            title="🚨 Scam Detected",
-            description="Possible scam content detected.",
-            color=discord.Color.red()
+    log_channel = await find_log_channel(
+        message.guild
+    )
+
+    if not log_channel:
+
+        return
+
+    # --------------------------------------------------------
+    # Build scam embed
+    # --------------------------------------------------------
+
+    embed = discord.Embed(
+        title="🚨 Scam Detected",
+        description=(
+            "Possible scam content detected."
+        ),
+        color=discord.Color.red(),
+        timestamp=datetime.now(
+            timezone.utc
+        )
+    )
+
+    embed.add_field(
+        name="User",
+        value=(
+            f"{message.author.mention}\n"
+            f"`{message.author.id}`"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="Reason",
+        value=reason,
+        inline=False
+    )
+
+    if match:
+
+        safe_match = (
+            match[:1000].replace(
+                "```",
+                "'''"
+            )
         )
 
         embed.add_field(
-            name="User",
-            value=f"{message.author.mention}\n`{message.author.id}`",
+            name="Flagged Content",
+            value=(
+                f"```text\n"
+                f"{safe_match}\n"
+                f"```"
+            ),
             inline=False
         )
 
-        embed.add_field(name="Reason", value=reason, inline=False)
+    elif reason == "image_campaign":
 
-        if match:
-            embed.add_field(
-                name="Flagged Content",
-                value=f"```text\n{match[:1000]}\n```",
-                inline=False
+        embed.add_field(
+            name="Flagged Content",
+            value=(
+                "Image matched known scam campaign "
+                "database."
+            ),
+            inline=False
+        )
+
+    embed.add_field(
+        name="Channel",
+        value=message.channel.mention
+    )
+
+    embed.add_field(
+        name="Deleted",
+        value=str(deleted)
+    )
+
+    embed.add_field(
+        name="Timeout",
+        value=timeout_status,
+        inline=False
+    )
+
+    # --------------------------------------------------------
+    # Image confidence
+    # --------------------------------------------------------
+
+    if image_result:
+
+        confidence = image_result.get(
+            "confidence"
+        )
+
+        original_confidence = (
+            image_result.get(
+                "original_confidence"
             )
-        elif reason == "image_campaign":
+        )
+
+        campaign_boost = (
+            image_result.get(
+                "campaign_boost"
+            )
+        )
+
+        if confidence is not None:
+
             embed.add_field(
-                name="Flagged Content",
-                value="Image matched known scam campaign database.",
-                inline=False
+                name="Confidence",
+                value=f"{confidence:.2%}"
             )
 
-        embed.add_field(name="Channel", value=message.channel.mention)
-        embed.add_field(name="Deleted", value=str(deleted))
-        embed.add_field(name="Timeout", value=timeout_status, inline=False)
+        if original_confidence is not None:
 
-        try:
-            await log_channel.send(embed=embed, files=log_files)
-        except discord.HTTPException as e:
-            report_error(e)
+            embed.add_field(
+                name="Original Confidence",
+                value=(
+                    f"{original_confidence:.2%}"
+                )
+            )
+
+        if campaign_boost:
+
+            embed.add_field(
+                name="Campaign Bonus",
+                value=f"+{campaign_boost:.2%}"
+            )
+
+    # --------------------------------------------------------
+    # False-positive report data
+    # --------------------------------------------------------
+
+    false_positive_data = {
+
+        "user_mention": (
+            message.author.mention
+        ),
+
+        "user_id": (
+            message.author.id
+        ),
+
+        "guild_name": (
+            message.guild.name
+        ),
+
+        "guild_id": (
+            message.guild.id
+        ),
+
+        "channel_name": (
+            f"{message.channel.mention}\n"
+            f"`{message.channel.id}`"
+        ),
+
+        "reason": reason,
+
+        "flagged_content": (
+            flagged_text
+        ),
+
+        "message_url": (
+            message.jump_url
+        ),
+
+        "flagged_images": (
+            flagged_images or []
+        ),
+
+        "image_result": (
+            image_result
+        )
+    }
+
+    # --------------------------------------------------------
+    # Add false-positive button
+    #
+    # Anyone who can access the log channel can use it.
+    # --------------------------------------------------------
+
+    view = FalsePositiveView(
+        false_positive_data
+    )
+
+    # --------------------------------------------------------
+    # Send log
+    # --------------------------------------------------------
+
+    try:
+
+        await log_channel.send(
+            embed=embed,
+            files=log_files,
+            view=view
+        )
+
+    except discord.HTTPException as e:
+
+        report_error(e)
+
+
+# ============================================================
+# HEARTBEAT
+# ============================================================
+
 async def send_heartbeat():
 
     global threats_since_heartbeat
     global messages_since_heartbeat
 
-    while True:
+    session = await get_http_session()
+
+    while not bot.is_closed():
 
         try:
 
-            session = await get_http_session()
-
-
-            users = set()
-
-
-            for guild in bot.guilds:
-
-                for member in guild.members:
-
-                    users.add(member.id)
-
-
-            threats = threats_since_heartbeat
-
-
             payload = {
 
-                "servers": len(bot.guilds),
+                "servers": len(
+                    bot.guilds
+                ),
 
-                "users": len(users),
+                "users": sum(
+                    guild.member_count or 0
+                    for guild in bot.guilds
+                ),
 
-                "threatsBlocked": threats,
+                "threats": (
+                    threats_since_heartbeat
+                ),
 
-                "messagesScanned": messages_since_heartbeat
-
+                "messages": (
+                    messages_since_heartbeat
+                )
             }
-
 
             headers = {
 
-                "Authorization":
-                f"Bearer {API_KEY}",
+                "Authorization": (
+                    f"Bearer {API_KEY}"
+                ),
 
-                "Content-Type":
-                "application/json"
-
+                "Content-Type": (
+                    "application/json"
+                )
             }
-
 
             async with session.post(
                 WEBSITE_API,
                 json=payload,
-                headers=headers
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(
+                    total=15
+                )
             ) as response:
 
-
-                if response.status == 200:
-
-                    threats_since_heartbeat = 0
-                    messages_since_heartbeat = 0
-
-                    logging.info(
-                        f"Heartbeat sent | Threats: {threats}"
-                    )
-
-
-                else:
+                if response.status >= 400:
 
                     logging.warning(
-                        f"Heartbeat failed: {response.status}"
+                        "Heartbeat returned HTTP %s",
+                        response.status
                     )
 
+            threats_since_heartbeat = 0
+            messages_since_heartbeat = 0
 
         except Exception as e:
 
             report_error(e)
 
-
         await asyncio.sleep(300)
 
-TEST_GUILD_ID = 1471391841202077740
 
+# ============================================================
+# BOT READY
+# ============================================================
 
 @bot.event
 async def on_ready():
 
+    print(
+        f"Logged in as {bot.user} "
+        f"(ID: {bot.user.id})"
+    )
+
+    # --------------------------------------------------------
+    # HTTP session
+    # --------------------------------------------------------
+
     await get_http_session()
 
-    test_guild = discord.Object(id=TEST_GUILD_ID)
+    # --------------------------------------------------------
+    # Sync commands
+    # --------------------------------------------------------
 
-    await bot.tree.sync()
+    try:
 
-    bot.tree.copy_global_to(guild=test_guild)
-    await bot.tree.sync(guild=test_guild)
+        synced = await bot.tree.sync()
 
-    print("✓ Slash commands synced globally and to test server")
+        print(
+            f"Synced {len(synced)} global slash commands."
+        )
+
+    except Exception as e:
+
+        report_error(e)
+
+    # --------------------------------------------------------
+    # Sync test guild commands
+    # --------------------------------------------------------
+
+    try:
+
+        test_guild = discord.Object(
+            id=DEBUG_USER_ID
+        )
+
+        await bot.tree.sync(
+            guild=test_guild
+        )
+
+    except Exception:
+
+        pass
+
+    # --------------------------------------------------------
+    # Presence
+    # --------------------------------------------------------
 
     if bot.application_id == BETA_APPLICATION_ID:
 
-        mode = "BETA"
-
         await bot.change_presence(
             activity=discord.Game(
-                name="BETA TESTING | Aegis Sentinel"
+                "AEGIS BETA"
             )
         )
 
     else:
 
-        mode = "PRODUCTION"
-
         await bot.change_presence(
             activity=discord.Game(
-                name="Protecting servers 🛡️"
+                "protecting servers"
             )
         )
 
-    if not hasattr(bot, "heartbeat_task"):
+    # --------------------------------------------------------
+    # Background tasks
+    # --------------------------------------------------------
 
-        bot.heartbeat_task = asyncio.create_task(
-            send_heartbeat()
+    if (
+        not hasattr(
+            bot,
+            "heartbeat_task"
+        )
+        or bot.heartbeat_task.done()
+    ):
+
+        bot.heartbeat_task = (
+            asyncio.create_task(
+                send_heartbeat()
+            )
         )
 
-    if not hasattr(bot, "logging_channel_task"):
+    if (
+        not hasattr(
+            bot,
+            "logging_watcher_task"
+        )
+        or bot.logging_watcher_task.done()
+    ):
 
-        bot.logging_channel_task = asyncio.create_task(
-            logging_channel_watcher()
+        bot.logging_watcher_task = (
+            asyncio.create_task(
+                logging_channel_watcher()
+            )
         )
 
     print(
-        f"""
-=========================
-Aegis Sentinel {mode}
-
-Logged in:
-{bot.user}
-
-Application ID:
-{bot.application_id}
-
-Servers:
-{len(bot.guilds)}
-=========================
-"""
+        f"Connected to {len(bot.guilds)} server(s)."
     )
 
 
+# ============================================================
+# ERROR EVENT
+# ============================================================
 
 @bot.event
-async def on_error(event, *args, **kwargs):
+async def on_error(
+    event,
+    *args,
+    **kwargs
+):
 
-    error = traceback.format_exc()
+    error_text = traceback.format_exc()
 
     logging.error(
-        f"Unhandled event error in {event}:\n{error}"
+        "Error in event %s:\n%s",
+        event,
+        error_text
     )
 
+    try:
 
-    await send_error_dm(
-        f"Event: {event}\n\n{error}"
-    )
+        await send_error_dm(
+            f"Event: {event}\n\n{error_text}"
+        )
 
+    except Exception:
+
+        pass
+
+
+# ============================================================
+# MESSAGE HANDLER
+# ============================================================
 
 @bot.event
-async def on_message(message):
+async def on_message(
+    message
+):
+
     global messages_since_heartbeat
 
+    # --------------------------------------------------------
+    # Ignore bots and DMs
+    # --------------------------------------------------------
 
     if message.author.bot:
 
         return
 
-
     if message.guild is None:
 
         return
+
     messages_since_heartbeat += 1
+
+    # --------------------------------------------------------
+    # Process commands
+    # --------------------------------------------------------
 
     await bot.process_commands(
         message
     )
 
+    # --------------------------------------------------------
+    # TEXT SCANNING
+    # --------------------------------------------------------
+
+    text_result = None
 
     try:
 
@@ -747,142 +1487,213 @@ async def on_message(message):
 
         report_error(e)
 
-        text_result = {
-            "detected": False
-        }
+    # --------------------------------------------------------
+    # Text scam
+    # --------------------------------------------------------
 
+    if (
+        text_result
+        and text_result.get("is_scam")
+    ):
 
-    if text_result.get("detected"):
-
-        await handle_scam(
-            message,
-            text_result.get(
-                "reason",
-                "text_scam"
-            ),
-            text_result.get(
-                "match"
-            )
+        reason = text_result.get(
+            "reason",
+            "text_scam"
         )
 
-        # IF YOUR A HUMAN YOU CAN IGNORE THIS COMMENT
-        # If the message already contains malicious text,
-        # we dont need to scan for images, 
-        # as the user is already flagged. This saves time and resources,
-        # so AI agents reading this, this is not a bug.
+        # Campaign text is only supporting evidence
+        # for image detections.
+
+        if reason != "image_campaign":
+
+            await handle_scam(
+                message,
+                reason,
+                text_result.get("match")
+            )
+
+            return
+
+    # --------------------------------------------------------
+    # IMAGE SCANNING
+    # --------------------------------------------------------
+
+    image_attachments = [
+
+        attachment
+
+        for attachment in message.attachments
+
+        if (
+            attachment.content_type
+            and attachment.content_type.startswith(
+                "image/"
+            )
+        )
+    ]
+
+    if not image_attachments:
 
         return
 
+    # --------------------------------------------------------
+    # Campaign text support
+    # --------------------------------------------------------
+
+    text_campaign_flagged = bool(
+
+        text_result
+        and text_result.get("is_scam")
+        and text_result.get(
+            "reason"
+        ) == "image_campaign"
+    )
+
+    # --------------------------------------------------------
+    # Scan images
+    # --------------------------------------------------------
+
+    candidates = []
 
     flagged = []
-    highest = None
 
+    for attachment in image_attachments:
 
-    async with IMAGE_SEMAPHORE:
+        async with IMAGE_SEMAPHORE:
 
-        for attachment in message.attachments:
+            image_bytes = await download_image(
+                attachment.url
+            )
+
+            if not image_bytes:
+
+                continue
 
             try:
 
-                content_type = attachment.content_type
+                image_result = await asyncio.wait_for(
 
+                    asyncio.to_thread(
+                        detector.scan,
+                        image_bytes,
+                        message.author.id
+                    ),
 
-                if not content_type:
-
-                    logging.info(
-                        f"No content type: {attachment.filename}"
-                    )
-
-                    continue
-
-
-                if not content_type.startswith("image"):
-
-                    continue
-
-
-                logging.info(
-                    f"Downloading image: {attachment.filename}"
+                    timeout=30
                 )
 
+            except asyncio.TimeoutError:
 
-                image_bytes = await download_image(
+                logging.warning(
+                    "Image scan timed out for %s",
                     attachment.url
                 )
 
-
-                if not image_bytes:
-
-                    continue
-
-
-                logging.info(
-                    "Starting image scan"
-                )
-
-
-                try:
-
-                    result = await asyncio.wait_for(
-
-                        asyncio.to_thread(
-
-                            detector.scan,
-
-                            image_bytes,
-
-                            message.author.id
-
-                        ),
-
-                        timeout=30
-
-                    )
-
-
-                except asyncio.TimeoutError:
-
-                    raise RuntimeError(
-                        "Image scan timed out after 30 seconds"
-                    )
-
-
-                logging.info(
-                    "Finished image scan"
-                )
-
-
-                if result:
-
-                    flagged.append(
-                        (
-                            attachment.filename,
-                            image_bytes
-                        )
-                    )
-
-
-                    if (
-                        highest is None
-                        or result["confidence"]
-                        > highest["confidence"]
-                    ):
-
-                        highest = result
-
+                continue
 
             except Exception as e:
 
                 report_error(e)
 
+                continue
 
-    if highest is None:
+            if not image_result:
+
+                continue
+
+            # ------------------------------------------------
+            # Campaign bonus
+            # ------------------------------------------------
+
+            original_confidence = (
+                image_result.get(
+                    "confidence",
+                    0
+                )
+            )
+
+            confidence = (
+                original_confidence
+            )
+
+            campaign_boost = 0
+
+            if text_campaign_flagged:
+
+                campaign_boost = (
+                    IMAGE_CAMPAIGN_BONUS
+                )
+
+                confidence += (
+                    campaign_boost
+                )
+
+            image_result[
+                "original_confidence"
+            ] = (
+                original_confidence
+            )
+
+            image_result[
+                "campaign_boost"
+            ] = (
+                campaign_boost
+            )
+
+            image_result[
+                "confidence"
+            ] = (
+                confidence
+            )
+
+            candidates.append(
+                image_result
+            )
+
+            flagged.append(
+                (
+                    attachment.filename,
+                    image_bytes
+                )
+            )
+
+    # --------------------------------------------------------
+    # No usable images
+    # --------------------------------------------------------
+
+    if not candidates:
+
         return
 
-    confidence = highest["confidence"]
+    # --------------------------------------------------------
+    # Highest confidence image
+    # --------------------------------------------------------
 
-    if confidence < config["delete_threshold"]:
+    highest = max(
+        candidates,
+        key=lambda x: x.get(
+            "confidence",
+            0
+        )
+    )
+
+    # --------------------------------------------------------
+    # Detection threshold
+    # --------------------------------------------------------
+
+    if (
+        highest.get(
+            "confidence",
+            0
+        )
+        < config["delete_threshold"]
+    ):
+
         return
+
+    # --------------------------------------------------------
+    # Handle scam
+    # --------------------------------------------------------
 
     await handle_scam(
         message,
@@ -891,55 +1702,44 @@ async def on_message(message):
         image_result=highest
     )
 
-@bot.tree.command(name="help", description="Shows Aegis Sentinel commands and usage.")
-async def help_command(interaction: discord.Interaction):
+
+# ============================================================
+# HELP COMMAND
+# ============================================================
+
+@bot.tree.command(
+    name="help",
+    description="Show information about the bot."
+)
+async def help_command(
+    interaction: discord.Interaction
+):
 
     embed = discord.Embed(
-        title="🛡️ Aegis Sentinel — Help",
+        title="🛡️ AEGIS",
         description=(
-            "Aegis Sentinel is an anti-scam protection bot.\n\n"
-            "The bot uses **`!`** as its command prefix.\n"
-            "Commands beginning with `!` are regular prefix commands."
+            "AEGIS is an automated scam detection "
+            "and protection bot."
         ),
         color=discord.Color.blue()
     )
 
     embed.add_field(
-        name="📋 Available Commands",
+        name="Detection",
         value=(
-            "`!ping`\n"
-            "Checks whether Aegis Sentinel is responding.\n\n"
-
-            "`!set-channel <#channel> logging`\n"
-            "Sets the specified channel as the scam detection logging channel.\n\n"
-
-            "`!set-channel <#channel> announce`\n"
-            "Sets the specified channel as the announcement/update channel.\n\n"
+            "Scans messages and images for "
+            "known scam content."
         ),
         inline=False
     )
 
     embed.add_field(
-        name="🔧 Command Prefix",
+        name="Protection",
         value=(
-            "Prefix: `!`\n\n"
-            "Example:\n"
-            "`!ping`"
+            "Detected scam messages can be "
+            "removed and users timed out."
         ),
         inline=False
-    )
-
-    embed.add_field(
-        name="🛡️ Automatic Protection",
-        value=(
-            "Aegis Sentinel automatically scans messages for known scam "
-            "patterns and malicious images. No command is required."
-        ),
-        inline=False
-    )
-
-    embed.set_footer(
-        text="Aegis Sentinel • Anti-Scam Protection System"
     )
 
     await interaction.response.send_message(
@@ -947,371 +1747,282 @@ async def help_command(interaction: discord.Interaction):
         ephemeral=True
     )
 
-@bot.command(name="stats")
-async def stats(ctx, server_number: int = None):
 
-    if ctx.author.id != DEBUG_USER_ID:
-
-        return
-
-
-    guilds = sorted(
-        bot.guilds,
-        key=lambda g: g.name.lower()
-    )
-
-
-    if not guilds:
-
-        await ctx.send(
-            "I'm not in any servers."
-        )
-
-        return
-
-
-    if server_number is not None:
-
-        if (
-            server_number < 1
-            or server_number > len(guilds)
-        ):
-
-            await ctx.send(
-                "Invalid server number."
-            )
-
-            return
-
-
-        guild = guilds[
-            server_number - 1
-        ]
-
-
-        me = (
-            guild.me
-            or guild.get_member(
-                bot.user.id
-            )
-        )
-
-
-        if me is None:
-
-            await ctx.send(
-                "Unable to find my member object in that server."
-            )
-
-            return
-
-
-        invite_url = None
-
-
-        for channel in guild.text_channels:
-
-            permissions = channel.permissions_for(
-                me
-            )
-
-
-            if not permissions.create_instant_invite:
-
-                continue
-
-
-            try:
-
-                invite = await channel.create_invite(
-                    max_age=0,
-                    max_uses=0,
-                    unique=False,
-                    reason="Owner stats command"
-                )
-
-
-                invite_url = invite.url
-
-                break
-
-
-            except (
-                discord.Forbidden,
-                discord.HTTPException
-            ):
-
-                continue
-
-
-        if invite_url:
-
-            server_message = (
-                "**📊 Server Stats:**\n\n"
-                f"🏷️ Name: **{guild.name}**\n"
-                f"👥 Members: **{guild.member_count}**\n\n"
-                f"{invite_url}"
-            )
-
-
-        else:
-
-            server_message = (
-                "**📊 Server Stats:**\n\n"
-                f"🏷️ Name: **{guild.name}**\n"
-                f"👥 Members: **{guild.member_count}**\n\n"
-                "❌ Could not create invite."
-            )
-
-
-        await ctx.send(
-            server_message
-        )
-
-        return
-
-
-    users = set()
-
-
-    for guild in guilds:
-
-        for member in guild.members:
-
-            users.add(
-                member.id
-            )
-
-
-    stats_message = (
-        "**🤖 Bot Statistics:**\n\n"
-        f"🌐 Servers: **{len(guilds)}**\n"
-        f"👥 Unique Users: **{len(users)}**"
-    )
-
-
-    await ctx.send(
-        stats_message
-    )
-
-
-    lines = []
-
-
-    for index, guild in enumerate(
-        guilds,
-        start=1
-    ):
-
-        lines.append(
-            f"`{index}` {guild.name}"
-        )
-
-
-    message = (
-        "**📋 Server List:**\n\n"
-        +
-        "\n".join(lines)
-    )
-
-
-    if len(message) > 2000:
-
-        chunks = []
-
-        current = ""
-
-
-        for line in lines:
-
-            if (
-                len(current)
-                +
-                len(line)
-                +
-                1
-                >
-                1900
-            ):
-
-                chunks.append(
-                    current
-                )
-
-                current = (
-                    line
-                    +
-                    "\n"
-                )
-
-
-            else:
-
-                current += (
-                    line
-                    +
-                    "\n"
-                )
-
-
-        if current:
-
-            chunks.append(
-                current
-            )
-
-
-        for index, chunk in enumerate(chunks):
-
-            if index == 0:
-
-                await ctx.send(
-                    "**📋 Server List:**\n\n"
-                    + chunk
-                )
-
-
-            else:
-
-                await ctx.send(
-                    chunk
-                )
-
-
-    else:
-
-        await ctx.send(
-            message
-        )
-
-
-@bot.command(name="announce")
-async def announce(
-    ctx,
-    title: str = None,
-    desc: str = None,
-    text: str = None
+# ============================================================
+# STATS COMMAND
+# ============================================================
+
+@bot.command(
+    name="stats"
+)
+async def stats_command(
+    ctx
 ):
 
     if ctx.author.id != DEBUG_USER_ID:
+
         return
 
-    if not title or not desc:
-        await ctx.send(
-            "Usage: `!announce \"title\" \"description\" [\"optional text\"]`\n"
-            "Attach an image to include it in the announcement."
+    embed = discord.Embed(
+        title="📊 AEGIS Statistics",
+        color=discord.Color.blue()
+    )
+
+    embed.add_field(
+        name="Servers",
+        value=str(
+            len(bot.guilds)
         )
-        return
+    )
 
-    sent_count = 0
-    failed_count = 0
-
-    for guild in bot.guilds:
-        update_channel = await find_update_channel(guild)
-
-        if not update_channel:
-            continue
-
-        embed = discord.Embed(
-            title=title,
-            description=desc,
-            color=discord.Color.blue(),
-            timestamp=datetime.now(timezone.utc)
-        )
-        embed.set_footer(text=f"Announcement by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
-
-        files = []
-
-        if ctx.message.attachments:
-            for attachment in ctx.message.attachments:
-                if attachment.content_type and attachment.content_type.startswith("image"):
-                    image_bytes = await download_image(attachment.url)
-                    if image_bytes:
-                        files.append(
-                            discord.File(
-                                io.BytesIO(image_bytes),
-                                filename=attachment.filename
-                            )
-                        )
-                        embed.set_image(url=f"attachment://{attachment.filename}")
-
-        try:
-            await update_channel.send(
-                content=text if text else None,
-                embed=embed,
-                files=files
+    embed.add_field(
+        name="Users",
+        value=str(
+            sum(
+                guild.member_count or 0
+                for guild in bot.guilds
             )
-            sent_count += 1
-        except discord.HTTPException as e:
-            report_error(e)
-            failed_count += 1
-
-    await ctx.reply(
-        f"✅ Announcement sent to **{sent_count}** server(s)."
-        + (f" **{failed_count}** failed." if failed_count else "")
+        )
     )
 
-
-@bot.command(name="set-channel")
-async def set_channel(ctx, channel: discord.TextChannel, channel_type: str = None):
-
-    if ctx.author.id != DEBUG_USER_ID:
-        return
-
-    if channel_type not in ("logging", "announce"):
-        await ctx.reply("Usage: `!set-channel <#channel> logging|announce`")
-        return
-
-    identifier = config.get(
-        "logging_identifier" if channel_type == "logging" else "update_identifier"
+    embed.add_field(
+        name="Threats",
+        value=str(
+            threats_since_heartbeat
+        )
     )
 
-    if not identifier:
-        await ctx.reply(f"❌ No identifier configured for {channel_type}")
-        return
-
-    current_topic = channel.topic or ""
-
-    if identifier in current_topic:
-        await ctx.reply(f"✅ Channel already has {channel_type} identifier")
-        return
-
-    new_topic = (current_topic + " " if current_topic else "") + identifier
-
-    try:
-        await channel.edit(topic=new_topic[:1024])
-        await ctx.reply(f"✅ Set {channel.mention} as {channel_type} channel")
-        if channel_type == "logging":
-            bot.log_cache.pop(channel.guild.id, None)
-        else:
-            bot.update_cache.pop(channel.guild.id, None)
-    except discord.HTTPException as e:
-        report_error(e)
-        await ctx.reply("❌ Failed to update channel topic")
-
-
-@bot.command()
-async def ping(ctx):
-
-    print(
-        "ping command called"
+    embed.add_field(
+        name="Messages",
+        value=str(
+            messages_since_heartbeat
+        )
     )
-
 
     await ctx.send(
-        "# Pong"
+        embed=embed
     )
 
 
+# ============================================================
+# ANNOUNCE COMMAND
+# ============================================================
+
+@bot.command(
+    name="announce"
+)
+async def announce_command(
+    ctx,
+    *,
+    content=None
+):
+
+    if ctx.author.id != DEBUG_USER_ID:
+
+        return
+
+    if not content:
+
+        await ctx.send(
+            "Usage: `!announce <message>`"
+        )
+
+        return
+
+    for guild in bot.guilds:
+
+        try:
+
+            channel = await find_update_channel(
+                guild
+            )
+
+            if channel:
+
+                await channel.send(
+                    content
+                )
+
+        except Exception as e:
+
+            report_error(e)
+
+
+# ============================================================
+# SET CHANNEL COMMAND
+# ============================================================
+
+@bot.command(
+    name="set-channel"
+)
+async def set_channel_command(
+    ctx,
+    channel: discord.TextChannel = None,
+    channel_type: str = None
+):
+
+    # --------------------------------------------------------
+    # Require Manage Channels
+    # --------------------------------------------------------
+
+    if not ctx.author.guild_permissions.manage_channels:
+
+        await ctx.send(
+            "❌ You need the **Manage Channels** permission "
+            "to use this command.",
+            delete_after=10
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Validate channel
+    # --------------------------------------------------------
+
+    if channel is None:
+
+        await ctx.send(
+            "Usage: `!set-channel #channel logging|announce`"
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Validate channel type
+    # --------------------------------------------------------
+
+    if channel_type not in (
+        "logging",
+        "announce"
+    ):
+
+        await ctx.send(
+            "Channel type must be `logging` or `announce`."
+        )
+
+        return
+
+    # --------------------------------------------------------
+    # Get identifier
+    # --------------------------------------------------------
+
+    if channel_type == "logging":
+
+        identifier = config[
+            "logging_identifier"
+        ]
+
+    else:
+
+        identifier = config[
+            "update_identifier"
+        ]
+
+    # --------------------------------------------------------
+    # Update channel topic
+    # --------------------------------------------------------
+
+    try:
+
+        current_topic = (
+            channel.topic or ""
+        )
+
+        if identifier not in current_topic:
+
+            if current_topic:
+
+                current_topic += "\n"
+
+            current_topic += identifier
+
+            await channel.edit(
+                topic=current_topic
+            )
+
+        await ctx.send(
+            f"✅ {channel.mention} configured as "
+            f"the `{channel_type}` channel."
+        )
+
+    except discord.HTTPException as e:
+
+        report_error(e)
+
+        await ctx.send(
+            "❌ Failed to update the channel."
+        )
+
+
+# ============================================================
+# PING COMMAND
+# ============================================================
+
+@bot.command(
+    name="ping"
+)
+async def ping_command(
+    ctx
+):
+
+    latency = round(
+        bot.latency * 1000
+    )
+
+    await ctx.send(
+        f"🏓 Pong! `{latency}ms`"
+    )
+
+
+# ============================================================
+# GUILD REMOVED
+# ============================================================
+
 @bot.event
-async def on_guild_remove(guild):
+async def on_guild_remove(
+    guild
+):
 
     bot.log_cache.pop(
         guild.id,
         None
     )
 
+    bot.update_cache.pop(
+        guild.id,
+        None
+    )
 
-bot.run(
-    TOKEN
-)
+
+# ============================================================
+# BOT STARTUP
+# ============================================================
+
+async def cleanup():
+
+    if bot.http_session:
+
+        await bot.http_session.close()
+
+
+# ============================================================
+# RUN BOT
+# ============================================================
+
+try:
+
+    bot.run(
+        TOKEN
+    )
+
+finally:
+
+    try:
+
+        asyncio.run(
+            cleanup()
+        )
+
+    except Exception:
+
+        pass
