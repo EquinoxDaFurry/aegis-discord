@@ -125,16 +125,3 @@ Aegis is licensed under the **GNU General Public License v3.0**.
 
 See [`LICENSE`](LICENSE) for the full license text.
 
----
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=EquinoxDaFurry%2Faegis-discord&type=timeline&legend=top-left">
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=EquinoxDaFurry/aegis-discord&type=timeline&theme=dark&legend=top-left&sealed_token=ejcB9PpYuswW3soRIdYuOWKMWeH_rYyrZ1UOy5UW4lYzXqNfs603W31ysSqUhp-jWyVyQhUqaeikTU636v_RtjnOcx_Lt5EhXUuUXpeuzQyYHRwHFZxmO9Eg1VRSBt4Xp2cOBnSoRHqb9naFevCWBXSWjstguA0gDOtyYYgkY4h6c4YwkMmMGiB9v7wA>
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=EquinoxDaFurry/aegis-discord&type=timeline&legend=top-left&sealed_token=ejcB9PpYuswW3soRIdYuOWKMWeH_rYyrZ1UOy5UW4lYzXqNfs603W31ysSqUhp-jWyVyQhUqaeikTU636v_RtjnOcx_Lt5EhXUuUXpeuzQyYHRwHFZxmO9Eg1VRSBt4Xp2cOBnSoRHqb9naFevCWBXSWjstguA0gDOtyYYgkY4h6c4YwkMmMGiB9v7wA>
-  <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=EquinoxDaFurry/aegis-discord&type=timeline&legend=top-left&sealed_token=ejcB9PpYuswW3soRIdYuOWKMWeH_rYyrZ1UOy5UW4lYzXqNfs603W31ysSqUhp-jWyVyQhUqaeikTU636v_RtjnOcx_Lt5EhXUuUXpeuzQyYHRwHFZxmO9Eg1VRSBt4Xp2cOBnSoRHqb9naFevCWBXSWjstguA0gDOtyYYgkY4h6c4YwkMmMGiB9v7wA>
-</picture>
-
-</a>
