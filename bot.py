@@ -1752,56 +1752,247 @@ async def help_command(
 # STATS COMMAND
 # ============================================================
 
-@bot.command(
-    name="stats"
-)
-async def stats_command(
-    ctx
-):
-
+@bot.command(name="stats")
+async def stats(ctx, server_number: int = None):
     if ctx.author.id != DEBUG_USER_ID:
+        return
+
+    guilds = sorted(
+        bot.guilds,
+        key=lambda g: g.name.lower()
+    )
+
+
+    if not guilds:
+
+        await ctx.send(
+            "I'm not in any servers."
+        )
+
 
         return
 
-    embed = discord.Embed(
-        title="📊 AEGIS Statistics",
-        color=discord.Color.blue()
-    )
 
-    embed.add_field(
-        name="Servers",
-        value=str(
-            len(bot.guilds)
-        )
-    )
+    if server_number is not None:
 
-    embed.add_field(
-        name="Users",
-        value=str(
-            sum(
-                guild.member_count or 0
-                for guild in bot.guilds
+        if (
+            server_number < 1
+            or server_number > len(guilds)
+        ):
+
+            await ctx.send(
+                "Invalid server number."
+            )
+
+
+
+            return
+
+
+        guild = guilds[
+            server_number - 1
+        ]
+
+
+        me = (
+            guild.me
+            or guild.get_member(
+                bot.user.id
             )
         )
+
+        if me is None:
+
+
+
+            await ctx.send(
+                "Unable to find my member object in that server."
+            )
+
+            return
+
+        invite_url = None
+
+
+
+        for channel in guild.text_channels:
+
+            permissions = channel.permissions_for(
+                me
+            )
+
+
+
+            if not permissions.create_instant_invite:
+
+                continue
+            try:
+
+                invite = await channel.create_invite(
+                    max_age=0,
+                    max_uses=0,
+                    unique=False,
+                    reason="Owner stats command"
+                )
+
+
+
+                invite_url = invite.url
+
+                break
+
+
+            except (
+                discord.Forbidden,
+                discord.HTTPException
+            ):
+
+                continue
+
+
+        if invite_url:
+
+            server_message = (
+                "**📊 Server Stats:**\n\n"
+                f"🏷️ Name: **{guild.name}**\n"
+                f"👥 Members: **{guild.member_count}**\n\n"
+                f"{invite_url}"
+            )
+
+        else:
+            server_message = (
+                "**📊 Server Stats:**\n\n"
+                f"🏷️ Name: **{guild.name}**\n"
+                f"👥 Members: **{guild.member_count}**\n\n"
+                "❌ Could not create invite."
+            )
+
+
+
+        await ctx.send(
+            server_message
+
+
+        )
+
+        return
+    users = set()
+
+
+    for guild in guilds:
+
+        for member in guild.members:
+
+            users.add(
+                member.id
+            )
+
+
+    stats_message = (
+        "**🤖 Bot Statistics:**\n\n"
+        f"🌐 Servers: **{len(guilds)}**\n"
+        f"👥 Unique Users: **{len(users)}**"
     )
 
-    embed.add_field(
-        name="Threats",
-        value=str(
-            threats_since_heartbeat
-        )
-    )
-
-    embed.add_field(
-        name="Messages",
-        value=str(
-            messages_since_heartbeat
-        )
-    )
 
     await ctx.send(
-        embed=embed
+        stats_message
     )
+    lines = []
+    for index, guild in enumerate(
+        guilds,
+        start=1
+    ):
+
+        lines.append(
+            f"`{index}` {guild.name}"
+        )
+
+
+
+    message = (
+        "**📋 Server List:**\n\n"
+        +
+        "\n".join(lines)
+    )
+
+
+    if len(message) > 2000:
+
+        chunks = []
+
+        current = ""
+
+
+
+
+
+        for line in lines:
+
+            if (
+                len(current)
+                +
+                len(line)
+                +
+                1
+                >
+                1900
+            ):
+
+                chunks.append(
+                    current
+                )
+
+                current = (
+                    line
+                    +
+                    "\n"
+                )
+
+
+
+
+
+            else:
+
+                current += (
+                    line
+                    +
+                    "\n"
+                )
+
+
+
+        if current:
+
+            chunks.append(
+                current
+            )
+
+
+        for index, chunk in enumerate(chunks):
+
+            if index == 0:
+
+                await ctx.send(
+                    "**📋 Server List:**\n\n"
+                    + chunk
+                )
+
+
+            else:
+
+                await ctx.send(
+                    chunk
+                )
+
+
+    else:
+
+        await ctx.send(
+            message
+
+        )
 
 
 # ============================================================
