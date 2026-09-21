@@ -812,19 +812,6 @@ class FalsePositiveView(
         button: discord.ui.Button
     ):
 
-        # ----------------------------------------------------
-        # IMPORTANT:
-        #
-        # There is intentionally NO DEBUG_USER_ID check.
-        #
-        # Anyone who can see the logging message can
-        # press this button.
-        # ----------------------------------------------------
-
-        # ----------------------------------------------------
-        # Already submitted
-        # ----------------------------------------------------
-
         if self.submitted:
 
             await interaction.response.send_message(
@@ -959,26 +946,33 @@ async def handle_scam(
     # DM user
     # --------------------------------------------------------
 
-    dm_text = f"""
-🚨 **Scam Detected**
-
-Your message was detected as possible scam content.
-
-**Server:** {message.guild.name}
-**Channel:** {message.channel.name}
-
-**Reason:** {reason}
-
-**Flagged Content:**
-{flagged_text[:1500]}
-
-Your message has been removed and you may have been timed out.
-
-If you believe this was a mistake, please contact the server staff.
-
-Report server:
-{config.get("dm_report_server", "Not configured")}
-""".strip()
+    dm_text = (
+        f"Hello <@{message.author.id}>,\n\n"
+        f"⚠️ **Security Alert**\n\n"
+        f"Your account sent content commonly associated with scam campaigns.\n\n"
+        f"Your account may have been compromised.\n\n"
+        f"Please:\n\n"
+        f"🔒 Reset your Discord password\n"
+        f"🛡️ Enable Two-Factor Authentication\n"
+        f"🦠 Run malware scans\n"
+        f"🔗 Review Authorized Apps\n\n\n"
+        f"You have been timed out in:\n\n"
+        f"**{message.guild.name}**\n\n"
+        f"for **7 days**.\n\n\n"
+        f"Detected location:\n\n"
+        f"<#{message.channel.id}>\n\n\n"
+        f"Flagged Content:\n\n"
+        f"```text\n"
+        f"{flagged_text[:1500]}\n"
+        f"```\n\n\n"
+        f"If this was a mistake:\n\n"
+        f"{config.get('dm_report_server', 'Not configured')}\n\n\n"
+        f"Please include:\n"
+        f"- The flagged message\n"
+        f"- What you intended to send\n"
+        f"- Any useful investigation details\n\n\n"
+        f"-# Anti-Scam Protection System"
+    ).strip()
 
     # --------------------------------------------------------
     # DM attachments
@@ -989,21 +983,18 @@ Report server:
             io.BytesIO(data),
             filename=name
         )
-
         for name, data in (
             flagged_images or []
         )
     ]
 
     try:
-
         await message.author.send(
             content=dm_text,
             files=dm_files
         )
 
     except discord.HTTPException as e:
-
         report_error(e)
 
     # --------------------------------------------------------
