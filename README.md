@@ -119,6 +119,18 @@ Features, detection methods, and responses may change as the project evolves.
 
 ---
 
+## AI Usage
+
+I have used AI quite a bit
+
+this README is largely made by AI
+most instances of text that the bot sends
+the text on the website (not the website itself but the word content) 
+
+is made by AI because half the time I don't know what to write
+
+---
+
 ## License
 
 Aegis is licensed under the **GNU General Public License v3.0**.
