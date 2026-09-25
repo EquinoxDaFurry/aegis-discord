@@ -123,11 +123,15 @@ Features, detection methods, and responses may change as the project evolves.
 
 I have used AI quite a bit
 
-* this README is largely made by AI.
-* most instances of text that the bot sends.
-* the text on the website (not the website itself but the word content).
+* this README
+* most instances of text that the bot sends
+* most text on the website
 
-is made by AI because half the time I don't know what to write
+is made by AI because half the time I know what i want to say, but not how to write it in a way that is coherent.
+
+I also sometimes use AI to draft prototypes before I commit to making it myself
+
+but besides that all code and design decisions are my own.
 
 ---
 
