@@ -1,0 +1,30 @@
+
+name: Build Aegis for Linux
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test Aegis
+        working-directory: rust
+        run: cargo test
+
+      - name: Build Linux executable
+        working-directory: rust
+        run: cargo build --release
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-linux
+          path: rust/target/release/aegis
