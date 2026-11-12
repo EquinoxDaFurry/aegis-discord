@@ -35,7 +35,6 @@ The bot needs the relevant permissions to carry out each action. If Discord deni
 | --- | --- |
 | `/help` | Shows the help command. |
 | `!ping` | Checks that the bot responds. |
-| `!stats` | Shows diagnostic server statistics (owner/debug use). |
 | `!stats <number>` | Shows details for a server in the stats list. |
 | `!set-channel #channel logging` | Sets the logging topic marker for a channel. |
 
