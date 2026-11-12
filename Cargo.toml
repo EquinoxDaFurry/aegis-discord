@@ -1,0 +1,26 @@
+[package]
+name = "aegis"
+version = "2.0.0"
+edition = "2021"
+description = "Aegis Discord scam-detection bot, Rust rewrite"
+license = "GPL-3.0-only"
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+dotenvy = "0.15"
+hex = "0.4"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+regex = "1"
+fancy-regex = "0.16.2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serenity = { version = "0.12", default-features = false, features = ["builder", "cache", "client", "gateway", "model", "rustls_backend"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tempfile = "3"
