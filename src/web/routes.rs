@@ -463,6 +463,7 @@ async fn moderation(
             let channel_id = embed_field(embed, "Channel").and_then(|v| extract_id(v, "<#"));
             let deleted = embed_field(embed, "Deleted").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"));
             // Aegis uploads the original detected image(s) as attachments on its audit message.
+            // Keep this metadata alongside each parsed moderation incident.
             // Only return Discord CDN attachment URLs with image MIME types or image extensions.
             let image_urls = message.get("attachments").and_then(Value::as_array).into_iter().flatten()
                 .filter_map(|attachment| {
