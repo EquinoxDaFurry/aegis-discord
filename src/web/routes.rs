@@ -629,6 +629,53 @@ async fn owner_cases(
     Ok(Json(OwnerCasesResponse { cases }))
 }
 
+#[derive(Serialize)]
+struct CrossServerAction {
+    case_id: String,
+    source_guild_id: String,
+    target_guild_id: String,
+    target_guild_name: String,
+    member_id: String,
+    reason: String,
+    timeout_until: Option<i64>,
+    status: String,
+    created_at: i64,
+    original_message_url: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CrossServerActionsResponse {
+    actions: Vec<CrossServerAction>,
+}
+
+async fn owner_cross_server_actions(
+    State(state): State<AppState>, headers: HeaderMap,
+) -> Result<Json<CrossServerActionsResponse>, StatusCode> {
+    let (user_id, _, _, _) = session_user(&headers, &state.db).await?;
+    require_owner(&user_id, &state)?;
+    sqlx::query("UPDATE moderation_cases SET status = 'expired' WHERE status = 'active' AND timeout_until IS NOT NULL AND timeout_until <= ?")
+        .bind(now()).execute(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let rows = sqlx::query_as::<_, (String, String, String, String, i64, String, String, Option<i64>, String, Option<String>)>(
+        "SELECT a.case_id, a.source_guild_id, a.target_guild_id, a.member_id, a.created_at, c.guild_name, c.reason, c.timeout_until, c.status, c.original_message_url FROM cross_server_actions a INNER JOIN moderation_cases c ON c.case_id = a.case_id WHERE a.case_id IS NOT NULL AND c.source = 'cross_server_intelligence' ORDER BY a.created_at DESC LIMIT 250"
+    ).fetch_all(&state.db).await.map_err(|error| {
+        tracing::error!(%error, "Could not load cross-server owner actions");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let actions = rows.into_iter().map(|row| CrossServerAction {
+        case_id: row.0,
+        source_guild_id: row.1,
+        target_guild_id: row.2,
+        member_id: row.3,
+        created_at: row.4,
+        target_guild_name: row.5,
+        reason: row.6,
+        timeout_until: row.7,
+        status: row.8,
+        original_message_url: row.9,
+    }).collect();
+    Ok(Json(CrossServerActionsResponse { actions }))
+}
+
 async fn owner_case_details(
     State(state): State<AppState>, headers: HeaderMap, Path(case_id): Path<String>,
 ) -> Result<Json<OwnerCaseDetails>, StatusCode> {
@@ -1125,6 +1172,7 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/auth/logout", post(logout))
         .route("/api/me", get(me))
         .route("/api/owner/cases", get(owner_cases))
+        .route("/api/owner/cross-server-actions", get(owner_cross_server_actions))
         .route("/api/owner/cases/:case_id", get(owner_case_details))
         .route("/api/owner/cases/:case_id/reverse", post(reverse_owner_case))
         .route("/api/runtime", get(get_runtime_info))
