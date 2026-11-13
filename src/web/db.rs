@@ -65,6 +65,11 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         deleted_messages INTEGER NOT NULL DEFAULT 0, timeouts INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY(guild_id, hour_start)
     )").execute(pool).await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS cross_server_actions (
+        source_guild_id TEXT NOT NULL, target_guild_id TEXT NOT NULL, member_id TEXT NOT NULL,
+        source_message_id TEXT NOT NULL, created_at INTEGER NOT NULL,
+        PRIMARY KEY(source_guild_id, target_guild_id, member_id, source_message_id)
+    )").execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_analytics_hourly_guild_hour ON analytics_hourly(guild_id, hour_start)")
         .execute(pool).await?;
     Ok(())
