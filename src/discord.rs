@@ -35,11 +35,12 @@ pub struct Handler {
     messages_since_heartbeat: Arc<AtomicU64>,
     threats_since_heartbeat: Arc<AtomicU64>,
     image_semaphore: Arc<tokio::sync::Semaphore>,
+    analytics_db: sqlx::SqlitePool,
 }
 impl Handler {
-    pub fn new(config: Config, text_detector: Arc<TextDetector>, image_detector: Arc<ImageDetector>, runtime_info: crate::web::SharedRuntimeInfo) -> Self {
+    pub fn new(config: Config, text_detector: Arc<TextDetector>, image_detector: Arc<ImageDetector>, runtime_info: crate::web::SharedRuntimeInfo, analytics_db: sqlx::SqlitePool) -> Self {
         Self {
-            config, runtime_info, text_detector, image_detector,
+            config, runtime_info, text_detector, image_detector, analytics_db,
             http: HttpClient::builder().timeout(std::time::Duration::from_secs(15))
                 .build().expect("reqwest client configuration is valid"),
             incident_cooldowns: Mutex::new(HashMap::new()),
@@ -49,6 +50,17 @@ impl Handler {
             messages_since_heartbeat: Arc::new(AtomicU64::new(0)),
             threats_since_heartbeat: Arc::new(AtomicU64::new(0)),
             image_semaphore: Arc::new(tokio::sync::Semaphore::new(2)),
+        }
+    }
+
+    async fn record_analytics(&self, guild_id: u64, messages: i64, detections: i64, confidence: Option<f64>, deleted: i64, timeouts: i64) {
+        let hour_start = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64).div_euclid(3600) * 3600;
+        let result = sqlx::query("INSERT INTO analytics_hourly(guild_id,hour_start,messages,scam_detections,confidence_sum,confidence_count,deleted_messages,timeouts) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(guild_id,hour_start) DO UPDATE SET messages=messages+excluded.messages, scam_detections=scam_detections+excluded.scam_detections, confidence_sum=confidence_sum+excluded.confidence_sum, confidence_count=confidence_count+excluded.confidence_count, deleted_messages=deleted_messages+excluded.deleted_messages, timeouts=timeouts+excluded.timeouts")
+            .bind(guild_id.to_string()).bind(hour_start).bind(messages).bind(detections)
+            .bind(confidence.unwrap_or(0.0)).bind(i64::from(confidence.is_some()))
+            .bind(deleted).bind(timeouts).execute(&self.analytics_db).await;
+        if let Err(error) = result {
+            warn!(%error, guild_id, "Could not update analytics aggregates");
         }
     }
 
@@ -71,7 +83,7 @@ impl Handler {
         false
     }
 
-    async fn scan_attachments(&self, ctx: &Context, message: &Message, campaign_flagged: bool) -> Option<(String, Vec<(String, Vec<u8>)>)> {
+    async fn scan_attachments(&self, ctx: &Context, message: &Message, campaign_flagged: bool) -> Option<(String, Vec<(String, Vec<u8>)>, f64)> {
         let mut best: Option<(f64, String)> = None;
         let mut flagged = Vec::new();
         for attachment in &message.attachments {
@@ -128,10 +140,10 @@ impl Handler {
                 }
             }
         }
-        best.map(|(_, reason)| (reason, flagged))
+        best.map(|(confidence, reason)| (reason, flagged, confidence))
     }
 
-    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, images: Vec<(String, Vec<u8>)>) {
+    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, images: Vec<(String, Vec<u8>)>, confidence: Option<f64>) {
         let Some(guild_id) = message.guild_id else { return };
         let channels = match guild_id.channels(&ctx.http).await {
             Ok(channels) => channels,
@@ -193,6 +205,7 @@ impl Handler {
             }
         };
         let Some(guild_id) = message.guild_id else { return };
+        self.record_analytics(guild_id.get(), 0, 1, confidence, i64::from(deleted), 0).await;
         if self.on_cooldown(guild_id.get(), message.author.id.get()) { return; }
 
         let timeout_status = match guild_id.member(&ctx.http, message.author.id).await {
@@ -220,6 +233,9 @@ impl Handler {
             }
         };
 
+        if timeout_status == "Timed out successfully" {
+            self.record_analytics(guild_id.get(), 0, 0, None, 0, 1).await;
+        }
         let guild_name = match guild_id.to_partial_guild(&ctx.http).await {
             Ok(guild) => guild.name,
             Err(_) => "Unknown server".to_owned(),
@@ -424,7 +440,9 @@ impl EventHandler for Handler {
     }
 
     async fn message(&self, ctx: Context, message: Message) {
-        if message.author.bot || message.guild_id.is_none() { return; }
+        let Some(message_guild_id) = message.guild_id else { return };
+        self.record_analytics(message_guild_id.get(), 1, 0, None, 0, 0).await;
+        if message.author.bot { return; }
         self.messages_since_heartbeat.fetch_add(1, Ordering::Relaxed);
         if message.content.starts_with("!ping") {
             let _ = message.channel_id.say(&ctx.http, "🏓 Pong!").await;
@@ -561,15 +579,15 @@ impl EventHandler for Handler {
             if detection.kind != DetectionKind::Campaign {
                 info!(guild_id = ?message.guild_id, channel_id = %message.channel_id,
                     user_id = %message.author.id, "Aegis detected a text threat");
-                self.handle_detection(&ctx, &message, &detection.reason, &detection.matched_text, Vec::new()).await;
+                self.handle_detection(&ctx, &message, &detection.reason, &detection.matched_text, Vec::new(), None).await;
                 return;
             }
         }
         let campaign_flagged = text_detection.as_ref().is_some_and(|d| d.reason == "discord_attachment_scam");
         let image_detection = self.scan_attachments(&ctx, &message, campaign_flagged).await;
-        let Some((reason, bytes)) = image_detection else { return; };
+        let Some((reason, bytes, confidence)) = image_detection else { return; };
         info!(guild_id = ?message.guild_id, channel_id = %message.channel_id,
             user_id = %message.author.id, "Aegis detected an image threat");
-        self.handle_detection(&ctx, &message, "image_campaign", &reason, bytes).await;
+        self.handle_detection(&ctx, &message, "image_campaign", &reason, bytes, Some(confidence)).await;
     }
 }
