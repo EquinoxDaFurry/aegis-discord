@@ -408,11 +408,12 @@ async fn moderation(
     let channels: Vec<Value> = channels_response.json().await.map_err(|error| {
         tracing::error!(%error, guild_id = %guild.id, "Could not parse Discord channel list"); StatusCode::BAD_GATEWAY
     })?;
-    let log_channel = channels.iter().find(|channel| {
-        let id_matches = configured_channel.as_ref().is_some_and(|id| channel.get("id").and_then(Value::as_str) == Some(id));
-        let topic_matches = channel.get("topic").and_then(Value::as_str).is_some_and(|topic| topic.contains(&state.logging_identifier));
-        if configured_channel.is_some() { id_matches } else { topic_matches }
-    });
+    let log_channel = configured_channel.as_ref()
+        .and_then(|id| channels.iter().find(|channel| channel.get("id").and_then(Value::as_str) == Some(id)))
+        .or_else(|| channels.iter().find(|channel| {
+            channel.get("topic").and_then(Value::as_str)
+                .is_some_and(|topic| topic.contains(&state.logging_identifier))
+        }));
     let Some(log_channel_id) = log_channel.and_then(|c| c.get("id").and_then(Value::as_str)).map(str::to_owned) else {
         return Ok(Json(ModerationResponse { guild_id, logging_channel_id: None, lookback_days: 9, truncated: false,
             warning: Some("Aegis could not find this server's logging channel. Configure the Aegis logging channel first.".to_owned()),
