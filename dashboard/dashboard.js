@@ -4,7 +4,7 @@ const breadcrumb = document.getElementById("breadcrumb-current");
 const toast = document.getElementById("toast");
 let toastTimer;
 function showToast(message){toast.textContent=message;toast.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove("show"),3400)}
-function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));}
+function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));if(page==="analytics")window.dispatchEvent(new Event("aegis:analytics-open"));}
 navLinks.forEach(link=>link.addEventListener("click",event=>{event.preventDefault();navigate(link.dataset.page)}));
 document.querySelectorAll("[data-page-link]").forEach(button=>button.addEventListener("click",()=>navigate(button.dataset.pageLink)));
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
@@ -183,6 +183,109 @@ navigate("selector");
   document.getElementById("moderation-search")?.addEventListener("input", renderModerationRows);
   document.getElementById("moderation-filter")?.addEventListener("change", renderModerationRows);
   document.getElementById("moderation-close-detail")?.addEventListener("click", () => { document.getElementById("moderation-detail").hidden = true; });
+
+  let analyticsRange = "week";
+  let analyticsStyle = "line";
+  let analyticsRequest = 0;
+
+  function formatAnalyticsLabel(timestamp) {
+    const date = new Date(timestamp * 1000);
+    if (analyticsRange === "day") return date.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", timeZone:"UTC"});
+    if (analyticsRange === "week") return date.toLocaleDateString([], {weekday:"short", timeZone:"UTC"});
+    return date.toLocaleDateString([], {day:"numeric", month:"short", timeZone:"UTC"});
+  }
+
+  function drawAnalyticsChart(containerId, buckets, key, label) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const values = (buckets || []).map(item => Number(item[key]) || 0);
+    if (!values.length || values.every(value => value === 0)) {
+      container.innerHTML = '<div class="analytics-chart-empty">No ' + label.toLowerCase() + ' recorded in this time range yet.</div>';
+      return;
+    }
+    const width = 760, height = 230, left = 42, right = 14, top = 12, bottom = 38;
+    const plotWidth = width - left - right, plotHeight = height - top - bottom;
+    const max = Math.max(1, ...values);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", label + " over time");
+    for (let i=0;i<=4;i++) {
+      const y = top + plotHeight * i / 4;
+      const grid = document.createElementNS(svg.namespaceURI,"line");
+      grid.setAttribute("x1",left); grid.setAttribute("x2",width-right); grid.setAttribute("y1",y); grid.setAttribute("y2",y); grid.setAttribute("class","analytics-gridline"); svg.appendChild(grid);
+      const tick = document.createElementNS(svg.namespaceURI,"text");
+      tick.setAttribute("x",left-9); tick.setAttribute("y",y+4); tick.setAttribute("text-anchor","end"); tick.setAttribute("class","analytics-axis-label");
+      tick.textContent = String(Math.round(max * (4-i) / 4)); svg.appendChild(tick);
+    }
+    const step = plotWidth / Math.max(1, values.length);
+    const points = values.map((value,index)=>({x:left+step*(index+0.5),y:top+plotHeight-(value/max)*plotHeight,value,index}));
+    if (analyticsStyle === "bar") {
+      const barWidth = Math.max(2, step * 0.62);
+      points.forEach(point=>{
+        const rect=document.createElementNS(svg.namespaceURI,"rect");
+        rect.setAttribute("x",point.x-barWidth/2); rect.setAttribute("y",point.y); rect.setAttribute("width",barWidth); rect.setAttribute("height",Math.max(0,top+plotHeight-point.y)); rect.setAttribute("rx","2"); rect.setAttribute("class","analytics-bar");
+        const title=document.createElementNS(svg.namespaceURI,"title"); title.textContent=formatAnalyticsLabel(buckets[point.index].timestamp)+": "+point.value; rect.appendChild(title); svg.appendChild(rect);
+      });
+    } else {
+      const path=document.createElementNS(svg.namespaceURI,"path");
+      path.setAttribute("d",points.map((point,index)=>(index?"L":"M")+point.x+" "+point.y).join(" "));
+      path.setAttribute("class","analytics-line"); svg.appendChild(path);
+      points.forEach(point=>{
+        const circle=document.createElementNS(svg.namespaceURI,"circle"); circle.setAttribute("cx",point.x); circle.setAttribute("cy",point.y); circle.setAttribute("r","3.5"); circle.setAttribute("class","analytics-point");
+        const title=document.createElementNS(svg.namespaceURI,"title"); title.textContent=formatAnalyticsLabel(buckets[point.index].timestamp)+": "+point.value; circle.appendChild(title); svg.appendChild(circle);
+      });
+    }
+    const labelCount = Math.min(6, values.length);
+    for(let i=0;i<labelCount;i++){
+      const index = labelCount===1 ? 0 : Math.round(i*(values.length-1)/(labelCount-1));
+      const tick=document.createElementNS(svg.namespaceURI,"text"); tick.setAttribute("x",points[index].x); tick.setAttribute("y",height-10); tick.setAttribute("text-anchor","middle"); tick.setAttribute("class","analytics-axis-label"); tick.textContent=formatAnalyticsLabel(buckets[index].timestamp); svg.appendChild(tick);
+    }
+    container.replaceChildren(svg);
+  }
+
+  async function loadAnalytics() {
+    if (!activeGuild) return;
+    const requestId = ++analyticsRequest, guildId = activeGuild.id;
+    const warning = document.getElementById("analytics-warning");
+    if (warning) warning.hidden = true;
+    document.getElementById("analytics-messages").textContent = "…";
+    try {
+      const data = await api("/api/guilds/" + encodeURIComponent(guildId) + "/analytics?range=" + analyticsRange);
+      if (requestId !== analyticsRequest || activeGuild?.id !== guildId) return;
+      const totals = data.totals || {};
+      document.getElementById("analytics-messages").textContent = Number(totals.messages || 0).toLocaleString();
+      document.getElementById("analytics-scams").textContent = Number(totals.scam_detections || 0).toLocaleString();
+      document.getElementById("analytics-confidence").textContent = totals.average_confidence == null ? "—" : (Number(totals.average_confidence)*100).toFixed(1)+"%";
+      document.getElementById("analytics-deleted").textContent = Number(totals.deleted_messages || 0).toLocaleString();
+      document.getElementById("analytics-timeouts").textContent = Number(totals.timeouts || 0).toLocaleString();
+      const period = analyticsRange==="day" ? "LAST 24 HOURS" : analyticsRange==="week" ? "LAST 7 DAYS" : "LAST 30 DAYS";
+      document.getElementById("analytics-message-period").textContent = period;
+      document.getElementById("analytics-scam-period").textContent = period;
+      drawAnalyticsChart("analytics-message-chart",data.buckets,"messages","Message frequency");
+      drawAnalyticsChart("analytics-scam-chart",data.buckets,"scam_detections","Scam frequency");
+      document.getElementById("analytics-footnote").textContent = "Tracking is active while the Aegis bot is online. No message content is stored for these statistics. Times are shown in UTC.";
+    } catch(error) {
+      if (requestId !== analyticsRequest) return;
+      warning.hidden = false;
+      warning.textContent = "Could not load analytics: " + error.message + ". Make sure the beta bot is online and has access to its analytics database.";
+      ["analytics-messages","analytics-scams","analytics-confidence","analytics-deleted","analytics-timeouts"].forEach(id=>document.getElementById(id).textContent="—");
+    }
+  }
+
+  window.addEventListener("aegis:analytics-open",loadAnalytics);
+  document.getElementById("analytics-refresh")?.addEventListener("click",loadAnalytics);
+  document.querySelectorAll("[data-analytics-range]").forEach(button=>button.addEventListener("click",()=>{
+    analyticsRange=button.dataset.analyticsRange;
+    document.querySelectorAll("[data-analytics-range]").forEach(item=>item.classList.toggle("selected",item===button));
+    loadAnalytics();
+  }));
+  document.querySelectorAll("[data-analytics-style]").forEach(button=>button.addEventListener("click",()=>{
+    analyticsStyle=button.dataset.analyticsStyle;
+    document.querySelectorAll("[data-analytics-style]").forEach(item=>item.classList.toggle("selected",item===button));
+    loadAnalytics();
+  }));
+
   const asset = name => "https://aegisdiscord.pages.dev/assets/" + name;
 
   async function api(path, options = {}) {
