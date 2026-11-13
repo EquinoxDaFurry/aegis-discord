@@ -190,6 +190,7 @@ struct ServerSettings {
     exempt_role_ids: Vec<String>,
     ignored_channel_ids: Vec<String>,
     logging_channel_id: Option<String>,
+    cross_server_intelligence: bool,
     #[serde(default = "default_message_templates")]
     message_templates: HashMap<String, MessageTemplate>,
 }
@@ -209,6 +210,7 @@ impl Default for ServerSettings {
             exempt_role_ids: Vec::new(),
             ignored_channel_ids: Vec::new(),
             logging_channel_id: None,
+            cross_server_intelligence: true,
             message_templates: default_message_templates(),
         }
     }
@@ -236,6 +238,7 @@ struct SettingsInput {
     exempt_role_ids: Vec<String>,
     ignored_channel_ids: Vec<String>,
     logging_channel_id: Option<String>,
+    cross_server_intelligence: bool,
     #[serde(default = "default_message_templates")]
     message_templates: HashMap<String, MessageTemplate>,
 }
@@ -256,6 +259,7 @@ impl Default for SettingsInput {
             exempt_role_ids: defaults.exempt_role_ids,
             ignored_channel_ids: defaults.ignored_channel_ids,
             logging_channel_id: defaults.logging_channel_id,
+            cross_server_intelligence: defaults.cross_server_intelligence,
             message_templates: defaults.message_templates,
         }
     }
@@ -1018,6 +1022,7 @@ async fn save_settings(
         exempt_role_ids: input.exempt_role_ids,
         ignored_channel_ids: input.ignored_channel_ids,
         logging_channel_id,
+        cross_server_intelligence: input.cross_server_intelligence,
         message_templates,
     };
     let json = serde_json::to_string(&settings).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
