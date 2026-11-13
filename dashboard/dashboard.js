@@ -453,6 +453,9 @@ navigate("selector");
       const rows = content.querySelectorAll(".moderation-detail-row");
       const flaggedRow = rows[rows.length - 1];
       if (flaggedRow) flaggedRow.querySelector("p").textContent = details.flagged_content || "No flagged content was recorded.";
+      if (details.source_detection) addLine("Source detection", details.source_detection);
+      if (details.confidence) addLine("Detection confidence", details.confidence);
+      if (details.source_server) addLine("Source server", details.source_server);
       if (details.image_urls?.length) {
         const gallery = document.createElement("div");
         gallery.className = "moderation-images";
