@@ -20,3 +20,7 @@ pub async fn run(bind: String, database_path: PathBuf, oauth_client_id: String, 
     tracing::info!(path = %database_path.display(), "Dashboard database ready");
     routes::serve(&bind, pool, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, runtime_info).await
 }
+
+pub async fn connect_dashboard_database(path: &std::path::Path) -> Result<sqlx::SqlitePool> {
+    db::connect(path).await
+}
