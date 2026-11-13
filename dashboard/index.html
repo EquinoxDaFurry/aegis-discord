@@ -31,11 +31,9 @@
         <a class="nav-link active" href="#overview" data-page="overview"><span class="nav-icon">▦</span>Overview</a>
         <a class="nav-link" href="#moderation" data-page="moderation"><span class="nav-icon">⚖</span>Moderation</a>
         <a class="nav-link" href="#protection" data-page="protection"><span class="nav-icon">⬡</span>Protection</a>
-        <a class="nav-link" href="#automod" data-page="automod"><span class="nav-icon">⌁</span>Automod</a>
         <a class="nav-link" href="#messages" data-page="messages"><span class="nav-icon">▤</span>Messages</a>
         <a class="nav-link" href="#logging" data-page="logging"><span class="nav-icon">≡</span>Logging</a>
         <a class="nav-link" href="#analytics" data-page="analytics"><span class="nav-icon">▥</span>Analytics</a>
-        <a class="nav-link" href="#settings" data-page="settings"><span class="nav-icon">⚙</span>Settings</a>
         <div class="nav-group-label account-label">ACCOUNT</div>
         <a class="nav-link" href="#account" data-page="account"><span class="nav-icon">◉</span>My account</a>
       </nav>
@@ -81,7 +79,7 @@
         <section class="page" id="page-overview">
           <div class="page-heading">
             <div><div class="eyebrow">SERVER CONTROL / OVERVIEW</div><h1 id="overview-title">Server overview</h1><p id="overview-subtitle">Live information for the selected Discord server.</p></div>
-            <div class="heading-actions"><span class="status-chip" id="overview-protection-chip"><i></i> Loading protection status</span><button class="button button-secondary" data-page-link="settings">Server settings <span>↗</span></button></div>
+            <div class="heading-actions"><span class="status-chip" id="overview-protection-chip"><i></i> Loading protection status</span><button class="button button-secondary" data-page-link="logging">Logging configuration <span>↗</span></button></div>
           </div>
           <div class="notice warning-notice" id="overview-beta-notice" hidden><span class="notice-mark">!</span><div><strong>You are using the Aegis Beta bot</strong><p>This server is currently protected by the beta instance of Aegis. Features and detection behaviour may change during testing.</p></div></div>
           <div class="notice" id="overview-data-notice"><span class="notice-mark">i</span><div><strong>Bot integration pending</strong><p>Overview statistics are not connected yet. Recent successful timeouts are available in the Moderation tab.</p></div></div>
@@ -224,11 +222,9 @@ If you believe this is a mistake, please submit a false-positive report so the s
           </form>
           <p class="protection-disclaimer">Settings are saved separately for each server. They will be applied to live Discord moderation during the later bot integration.</p>
         </section>
-        <section class="page" id="page-automod"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / AUTOMOD</div><h1>Automod</h1><p>Fine-tune automated moderation for this server.</p></div></div><div class="panel placeholder-panel"><span>⌁</span><h2>Automod rules</h2><p>Custom rules, allowlists, and future server-specific filters will be configured here.</p></div></section>
-        <section class="page" id="page-logging"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose where Aegis sends moderation and security events.</p></div></div><div class="panel placeholder-panel"><span>≡</span><h2>Logging configuration</h2><p>Channel selection and event categories will be connected to the bot configuration API.</p></div></section>
+                <section class="page" id="page-logging"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose where Aegis sends moderation and security events.</p></div></div><div class="panel placeholder-panel"><span>≡</span><h2>Logging configuration</h2><p>Channel selection and event categories will be connected to the bot configuration API.</p></div></section>
         <section class="page" id="page-analytics"><div class="page-heading"><div><div class="eyebrow">SERVER INSIGHTS / ANALYTICS</div><h1>Analytics</h1><p>Understand detection volume and moderation trends.</p></div></div><div class="panel placeholder-panel"><span>▥</span><h2>Server analytics</h2><p>Charts and historical statistics will appear here once event storage is implemented.</p></div></section>
-        <section class="page" id="page-settings"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / SETTINGS</div><h1>Server settings</h1><p>General configuration for this Discord server.</p></div></div><div class="panel placeholder-panel"><span>⚙</span><h2>General settings</h2><p>Server-level settings, permission checks, and configuration metadata will live here.</p></div></section>
-        <section class="page" id="page-account"><div class="page-heading"><div><div class="eyebrow">PERSONAL PREFERENCES / ACCOUNT</div><h1>My account</h1><p>Your dashboard preferences and connected Discord identity.</p></div></div><div class="panel placeholder-panel"><span>◉</span><h2>Account settings</h2><p>Discord OAuth sign-in, session management, and personal preferences will be implemented with the Rust backend.</p></div></section>
+                <section class="page" id="page-account"><div class="page-heading"><div><div class="eyebrow">PERSONAL PREFERENCES / ACCOUNT</div><h1>My account</h1><p>Your dashboard preferences and connected Discord identity.</p></div></div><div class="panel placeholder-panel"><span>◉</span><h2>Account settings</h2><p>Discord OAuth sign-in, session management, and personal preferences will be implemented with the Rust backend.</p></div></section>
         <footer class="app-footer"><span>AEGIS OXIDE <b>CONTROL PANEL</b></span><span>INDEPENDENT DASHBOARD · MAIN WEBSITE UNCHANGED</span></footer>
       </div>
     </main>
