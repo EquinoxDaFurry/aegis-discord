@@ -572,6 +572,9 @@ struct OwnerCase {
 struct OwnerCaseDetails {
     flagged_content: String,
     image_urls: Vec<String>,
+    source_detection: Option<String>,
+    confidence: Option<String>,
+    source_server: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -710,6 +713,9 @@ async fn owner_case_details(
             title.contains("Scam Detected") || title.contains("Cross Server Intelligence Network")));
     let flagged_content = embed.and_then(|embed| embed_field(embed, "Flagged Content"))
         .map(clean_code_block).unwrap_or_else(|| "Flagged content is unavailable in the stored Discord audit message.".to_owned());
+    let source_detection = embed.and_then(|embed| embed_field(embed, "Source Detection")).map(str::to_owned);
+    let confidence = embed.and_then(|embed| embed_field(embed, "Confidence")).map(str::to_owned);
+    let source_server = embed.and_then(|embed| embed_field(embed, "Source Server")).map(str::to_owned);
     let image_urls = message.get("attachments").and_then(Value::as_array).into_iter().flatten()
         .filter_map(|attachment| {
             let url = attachment.get("url").and_then(Value::as_str)?;
@@ -721,7 +727,7 @@ async fn owner_case_details(
                 || url.starts_with("https://media.discordapp.net/attachments/");
             (trusted_cdn && (content_type.starts_with("image/") || image_extension)).then(|| url.to_owned())
         }).collect();
-    Ok(Json(OwnerCaseDetails { flagged_content, image_urls }))
+    Ok(Json(OwnerCaseDetails { flagged_content, image_urls, source_detection, confidence, source_server }))
 }
 
 async fn reverse_owner_case(
