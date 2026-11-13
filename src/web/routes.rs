@@ -91,14 +91,35 @@ struct DiscordUser { id: String, username: String, avatar: Option<String> }
 #[serde(default)]
 struct ServerSettings {
     enabled: bool,
-    timeout_days: u8,
+    text_detection: bool,
+    image_detection: bool,
     delete_threshold: f64,
+    auto_delete: bool,
+    auto_timeout: bool,
+    timeout_days: u8,
+    dry_run: bool,
+    exempt_admins: bool,
+    exempt_role_ids: Vec<String>,
+    ignored_channel_ids: Vec<String>,
     logging_channel_id: Option<String>,
 }
 
 impl Default for ServerSettings {
     fn default() -> Self {
-        Self { enabled: true, timeout_days: 7, delete_threshold: 0.805, logging_channel_id: None }
+        Self {
+            enabled: true,
+            text_detection: true,
+            image_detection: true,
+            delete_threshold: 0.805,
+            auto_delete: true,
+            auto_timeout: true,
+            timeout_days: 7,
+            dry_run: false,
+            exempt_admins: true,
+            exempt_role_ids: Vec::new(),
+            ignored_channel_ids: Vec::new(),
+            logging_channel_id: None,
+        }
     }
 }
 
@@ -110,11 +131,52 @@ struct SettingsResponse {
 }
 
 #[derive(Deserialize)]
+#[serde(default)]
 struct SettingsInput {
     enabled: bool,
-    timeout_days: u8,
+    text_detection: bool,
+    image_detection: bool,
     delete_threshold: f64,
+    auto_delete: bool,
+    auto_timeout: bool,
+    timeout_days: u8,
+    dry_run: bool,
+    exempt_admins: bool,
+    exempt_role_ids: Vec<String>,
+    ignored_channel_ids: Vec<String>,
     logging_channel_id: Option<String>,
+}
+
+impl Default for SettingsInput {
+    fn default() -> Self {
+        let defaults = ServerSettings::default();
+        Self {
+            enabled: defaults.enabled,
+            text_detection: defaults.text_detection,
+            image_detection: defaults.image_detection,
+            delete_threshold: defaults.delete_threshold,
+            auto_delete: defaults.auto_delete,
+            auto_timeout: defaults.auto_timeout,
+            timeout_days: defaults.timeout_days,
+            dry_run: defaults.dry_run,
+            exempt_admins: defaults.exempt_admins,
+            exempt_role_ids: defaults.exempt_role_ids,
+            ignored_channel_ids: defaults.ignored_channel_ids,
+            logging_channel_id: defaults.logging_channel_id,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ProtectionOption {
+    id: String,
+    name: String,
+}
+
+#[derive(Serialize)]
+struct ProtectionOptionsResponse {
+    roles: Vec<ProtectionOption>,
+    channels: Vec<ProtectionOption>,
 }
 
 fn now() -> i64 {
@@ -485,6 +547,67 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Res
     Ok(response)
 }
 
+async fn protection_options(
+    State(state): State<AppState>, headers: HeaderMap, Path(guild_id): Path<String>,
+) -> Result<Json<ProtectionOptionsResponse>, StatusCode> {
+    let (_, _, _, guilds) = session_user(&headers, &state.db).await?;
+    let guild = guilds.iter().find(|g| g.id == guild_id && can_manage(g)).ok_or(StatusCode::FORBIDDEN)?;
+
+    let roles_response = state.http
+        .get(format!("https://discord.com/api/v10/guilds/{}/roles", guild.id))
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
+        .send().await.map_err(|error| {
+            tracing::error!(%error, guild_id = %guild.id, "Could not fetch Discord roles for protection settings");
+            StatusCode::BAD_GATEWAY
+        })?;
+    if !roles_response.status().is_success() {
+        let status = roles_response.status();
+        let body = roles_response.text().await.unwrap_or_default();
+        tracing::error!(%status, guild_id = %guild.id, response = %body.chars().take(300).collect::<String>(), "Discord rejected protection role lookup");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let role_values: Vec<Value> = roles_response.json().await.map_err(|error| {
+        tracing::error!(%error, guild_id = %guild.id, "Could not parse Discord roles");
+        StatusCode::BAD_GATEWAY
+    })?;
+    let roles = role_values.into_iter().filter_map(|role| {
+        let id = role.get("id")?.as_str()?.to_owned();
+        if id == guild.id { return None; }
+        Some(ProtectionOption {
+            id,
+            name: role.get("name").and_then(Value::as_str).unwrap_or("Unnamed role").to_owned(),
+        })
+    }).collect();
+
+    let channels_response = state.http
+        .get(format!("https://discord.com/api/v10/guilds/{}/channels", guild.id))
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
+        .send().await.map_err(|error| {
+            tracing::error!(%error, guild_id = %guild.id, "Could not fetch Discord channels for protection settings");
+            StatusCode::BAD_GATEWAY
+        })?;
+    if !channels_response.status().is_success() {
+        let status = channels_response.status();
+        let body = channels_response.text().await.unwrap_or_default();
+        tracing::error!(%status, guild_id = %guild.id, response = %body.chars().take(300).collect::<String>(), "Discord rejected protection channel lookup");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let channel_values: Vec<Value> = channels_response.json().await.map_err(|error| {
+        tracing::error!(%error, guild_id = %guild.id, "Could not parse Discord channels");
+        StatusCode::BAD_GATEWAY
+    })?;
+    let channels = channel_values.into_iter().filter_map(|channel| {
+        let kind = channel.get("type").and_then(Value::as_u64)?;
+        if kind != 0 && kind != 5 { return None; }
+        Some(ProtectionOption {
+            id: channel.get("id")?.as_str()?.to_owned(),
+            name: channel.get("name").and_then(Value::as_str).unwrap_or("unnamed-channel").to_owned(),
+        })
+    }).collect();
+
+    Ok(Json(ProtectionOptionsResponse { roles, channels }))
+}
+
 async fn get_settings(
     State(state): State<AppState>, headers: HeaderMap, Path(guild_id): Path<String>,
 ) -> Result<Json<SettingsResponse>, StatusCode> {
@@ -509,11 +632,25 @@ async fn save_settings(
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
     let logging_channel_id = input.logging_channel_id.filter(|v| !v.trim().is_empty());
-    if logging_channel_id.as_ref().is_some_and(|v| !v.chars().all(|c| c.is_ascii_digit()) || v.len() > 25) {
+    let valid_ids = |ids: &[String]| ids.len() <= 250 && ids.iter().all(|id| !id.is_empty() && id.len() <= 25 && id.chars().all(|c| c.is_ascii_digit()));
+    if logging_channel_id.as_ref().is_some_and(|v| !v.chars().all(|c| c.is_ascii_digit()) || v.len() > 25)
+        || !valid_ids(&input.exempt_role_ids) || !valid_ids(&input.ignored_channel_ids) {
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
-    let settings = ServerSettings { enabled: input.enabled, timeout_days: input.timeout_days,
-        delete_threshold: input.delete_threshold, logging_channel_id };
+    let settings = ServerSettings {
+        enabled: input.enabled,
+        text_detection: input.text_detection,
+        image_detection: input.image_detection,
+        delete_threshold: input.delete_threshold,
+        auto_delete: input.auto_delete,
+        auto_timeout: input.auto_timeout,
+        timeout_days: input.timeout_days,
+        dry_run: input.dry_run,
+        exempt_admins: input.exempt_admins,
+        exempt_role_ids: input.exempt_role_ids,
+        ignored_channel_ids: input.ignored_channel_ids,
+        logging_channel_id,
+    };
     let json = serde_json::to_string(&settings).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let updated = now();
     sqlx::query("INSERT INTO guild_configs(guild_id, config_json, updated_at) VALUES(?, ?, ?) ON CONFLICT(guild_id) DO UPDATE SET config_json=excluded.config_json, updated_at=excluded.updated_at")
@@ -534,6 +671,7 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/api/runtime", get(get_runtime_info))
         .route("/api/guilds/:guild_id/beta-status", get(beta_status))
         .route("/api/guilds/:guild_id/moderation", get(moderation))
+        .route("/api/guilds/:guild_id/protection-options", get(protection_options))
         .route("/api/guilds/:guild_id/settings", get(get_settings).put(save_settings))
         .nest_service("/", ServeDir::new("dashboard"))
         .with_state(state)
