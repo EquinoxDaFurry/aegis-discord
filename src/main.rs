@@ -1,6 +1,7 @@
 mod config;
 mod detection;
 mod discord;
+mod web;
 use anyhow::{Context as _, Result};
 use config::Config;
 use detection::{image::ImageDetector, text::TextDetector, RuleDatabase};
@@ -27,6 +28,23 @@ async fn main() -> Result<()> {
     let mut client = Client::builder(&config.discord_token, intents)
         .event_handler(handler).await.context("creating Discord client")?;
     info!("Starting Aegis 2.0 (Rust)");
-    client.start().await.context("Discord client stopped")?;
+    let dashboard_bind = config.dashboard_bind.clone();
+    let dashboard_database = config.dashboard_database_path.clone();
+    let dashboard_task = tokio::spawn(async move {
+        web::run(dashboard_bind, dashboard_database).await
+    });
+    tokio::select! {
+        result = client.start() => {
+            dashboard_task.abort();
+            result.context("Discord client stopped")?;
+        }
+        result = dashboard_task => {
+            match result {
+                Ok(Ok(())) => anyhow::bail!("Dashboard server exited unexpectedly"),
+                Ok(Err(error)) => return Err(error),
+                Err(error) => return Err(error.into()),
+            }
+        }
+    }
     Ok(())
 }

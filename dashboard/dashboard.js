@@ -15,7 +15,7 @@ const templates={
  timeout:{title:"Timeout notice",description:"Sent to the affected member when Aegis applies a timeout.",content:"Hey {user}, Aegis detected content that may be associated with a scam campaign in **{server}**.\n\nYour account has been timed out for {duration}.\n\nReason: {reason}\n\nIf you believe this is a mistake, please submit a false-positive report so the server team can review it."},
  detection:{title:"Detection alert",description:"Posted in the configured moderation log channel.",content:"Aegis detected a possible scam message.\n\nMember: {user}\nReason: {reason}\nCase: {case_id}\nModerator: {moderator}"},
  report:{title:"False-positive received",description:"Sent after a member submits a false-positive report.",content:"Your report for case {case_id} in **{server}** has been received. A moderator will review it.\n\nThanks for helping improve Aegis."},
- warning:{title:"Warning message",description:"Sent when a moderator issues a warning.",content:"Hi {user}, this is a warning from the moderation team in **{server}**.\n\nReason: {reason}\nModerator: {moderator}\n\nPlease review the server rules."}
+
 };
 let currentTemplate="timeout";
 const editor=document.getElementById("message-content");
