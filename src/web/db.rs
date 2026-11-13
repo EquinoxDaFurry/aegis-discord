@@ -72,6 +72,15 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     )").execute(pool).await?;
     // Link each network action to its owner-console moderation case.
     let _ = sqlx::query("ALTER TABLE cross_server_actions ADD COLUMN case_id TEXT").execute(pool).await;
+    // Backfill links for network actions created before the owner-console integration.
+    sqlx::query("UPDATE cross_server_actions SET case_id = (
+        SELECT c.case_id FROM moderation_cases c
+        WHERE c.guild_id = cross_server_actions.target_guild_id
+          AND c.member_id = cross_server_actions.member_id
+          AND c.source = 'cross_server_intelligence'
+          AND c.original_message_url LIKE '%' || '/' || cross_server_actions.source_message_id
+        ORDER BY c.created_at DESC LIMIT 1
+    ) WHERE case_id IS NULL").execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_cross_server_actions_case ON cross_server_actions(case_id)")
         .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_analytics_hourly_guild_hour ON analytics_hourly(guild_id, hour_start)")
