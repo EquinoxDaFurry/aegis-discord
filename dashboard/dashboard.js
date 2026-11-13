@@ -535,9 +535,11 @@ navigate("selector");
                 await api("/api/owner/cases/" + encodeURIComponent(item.case_id) + "/reverse", { method: "POST", body: JSON.stringify({ reason: reasonText }) });
                 showToast("Timeout reversed and audit record saved.");
                 await loadOwnerCases();
+                await loadCrossServerActions();
               } catch (error) {
                 showToast("Could not reverse timeout: " + error.message);
                 await loadOwnerCases();
+                await loadCrossServerActions();
               }
             });
             actions.appendChild(reverse);
