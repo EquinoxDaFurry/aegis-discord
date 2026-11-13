@@ -195,6 +195,33 @@ navigate("selector");
       document.getElementById("moderation-window").textContent = "LAST " + data.lookback_days + " DAYS";
       const counts = {active:0,expired:0,ended_early:0,unknown:0};
       moderationData.forEach(item => counts[item.status] = (counts[item.status] || 0) + 1);
+      const activity = document.getElementById("overview-activity-empty");
+      if (activity) {
+        if (moderationData.length) {
+          activity.className = "activity-list";
+          activity.replaceChildren(...moderationData.slice(0,5).map(item => {
+            const row = document.createElement("div");
+            row.className = "activity-row";
+            const marker = document.createElement("span");
+            marker.className = "activity-marker";
+            marker.textContent = "!";
+            const copy = document.createElement("div");
+            copy.className = "activity-copy";
+            const title = document.createElement("strong");
+            title.textContent = "Scam detection · " + item.username;
+            const detail = document.createElement("small");
+            detail.textContent = item.status === "active" ? "Timeout active" : item.status === "ended_early" ? "Timeout ended early" : item.status === "expired" ? "Timeout expired" : "Timeout status unavailable";
+            copy.append(title, detail);
+            const time = document.createElement("time");
+            time.textContent = formatDate(item.created_at);
+            row.append(marker, copy, time);
+            return row;
+          }));
+        } else {
+          activity.className = "activity-empty";
+          activity.innerHTML = '<span>≡</span><strong>No activity data yet</strong><p>Real detections and moderation events will appear here when Aegis records them.</p>';
+        }
+      }
       document.getElementById("moderation-total").textContent = moderationData.length;
       document.getElementById("moderation-active").textContent = counts.active;
       document.getElementById("moderation-expired").textContent = counts.expired;
@@ -686,7 +713,7 @@ navigate("selector");
     loadSettings();
     loadAnalytics();
     loadBetaStatus();
-    if (document.getElementById("page-moderation").classList.contains("active")) loadModeration();
+    loadModeration();
   }
 
   async function initialize() {
@@ -721,6 +748,12 @@ navigate("selector");
       navigate("selector");
     }
   }
+
+  setInterval(() => {
+    if (!activeGuild) return;
+    loadAnalytics();
+    if (document.getElementById("page-overview").classList.contains("active")) loadModeration();
+  }, 60000);
 
   document.getElementById("protection-form")?.addEventListener("submit", saveProtectionSettings);
   document.getElementById("protection-threshold")?.addEventListener("input", event => {
