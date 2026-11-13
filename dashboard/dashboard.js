@@ -43,7 +43,8 @@ navigate("selector");
   let activeGuild = null;
   let signedIn = false;
   let currentSettings = null;
-  let runtimeInfo = null;
+  let betaBotPresent = false;
+  let betaStatusRequest = 0;
   const settingsPage = document.getElementById("page-settings");
   const asset = name => "https://aegisdiscord.pages.dev/assets/" + name;
 
@@ -195,17 +196,24 @@ navigate("selector");
 
   function renderRuntimeWarning() {
     const warning = document.getElementById("overview-beta-notice");
-    if (warning) warning.hidden = !runtimeInfo?.is_beta;
+    if (warning) warning.hidden = !betaBotPresent;
   }
 
-  async function loadRuntimeInfo() {
+  async function loadBetaStatus() {
+    if (!activeGuild) return;
+    const guildId = activeGuild.id;
+    const requestId = ++betaStatusRequest;
+    betaBotPresent = false;
+    renderRuntimeWarning();
     try {
-      runtimeInfo = await api("/api/runtime");
-      renderRuntimeWarning();
+      const status = await api("/api/guilds/" + encodeURIComponent(guildId) + "/beta-status");
+      if (requestId !== betaStatusRequest || activeGuild?.id !== guildId) return;
+      betaBotPresent = status.beta_bot_present === true;
     } catch (_) {
-      runtimeInfo = null;
-      renderRuntimeWarning();
+      if (requestId !== betaStatusRequest) return;
+      betaBotPresent = false;
     }
+    renderRuntimeWarning();
   }
 
   function renderOverview() {
@@ -258,10 +266,10 @@ navigate("selector");
     settingsForm();
     navigate("overview");
     loadSettings();
+    loadBetaStatus();
   }
 
   async function initialize() {
-    await loadRuntimeInfo();
     try {
       const data = await api("/api/me");
       signedIn = true;
