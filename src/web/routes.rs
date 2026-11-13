@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 use std::{net::SocketAddr, time::{SystemTime, UNIX_EPOCH}};
 use tower_http::services::ServeDir;
 
@@ -659,6 +659,82 @@ async fn save_settings(
     Ok(Json(SettingsResponse { guild_id, settings, updated_at: Some(updated) }))
 }
 
+
+#[derive(Deserialize)]
+struct AnalyticsQuery { range: Option<String> }
+
+#[derive(Serialize)]
+struct AnalyticsBucket {
+    timestamp: i64,
+    messages: i64,
+    scam_detections: i64,
+    average_confidence: Option<f64>,
+    deleted_messages: i64,
+    timeouts: i64,
+}
+
+#[derive(Serialize)]
+struct AnalyticsResponse {
+    guild_id: String,
+    range: String,
+    timezone: &'static str,
+    totals: AnalyticsBucket,
+    buckets: Vec<AnalyticsBucket>,
+}
+
+async fn analytics(
+    State(state): State<AppState>, headers: HeaderMap, Path(guild_id): Path<String>,
+    Query(query): Query<AnalyticsQuery>,
+) -> Result<Json<AnalyticsResponse>, StatusCode> {
+    let (_, _, _, guilds) = session_user(&headers, &state.db).await?;
+    let guild = guilds.iter().find(|g| g.id == guild_id && can_manage(g)).ok_or(StatusCode::FORBIDDEN)?;
+    let range = query.range.as_deref().unwrap_or("week");
+    let (periods, bucket_seconds) = match range {
+        "day" => (24_i64, 3_600_i64),
+        "week" => (7_i64, 86_400_i64),
+        "month" => (30_i64, 86_400_i64),
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+    let current = now();
+    let start = current - periods * bucket_seconds;
+    let rows = sqlx::query("SELECT hour_start, messages, scam_detections, confidence_sum, confidence_count, deleted_messages, timeouts FROM analytics_hourly WHERE guild_id = ? AND hour_start >= ? ORDER BY hour_start")
+        .bind(&guild.id).bind(start).fetch_all(&state.db).await
+        .map_err(|error| { tracing::error!(%error, guild_id = %guild.id, "Could not load analytics aggregates"); StatusCode::INTERNAL_SERVER_ERROR })?;
+    let mut values: HashMap<i64, (i64,i64,f64,i64,i64,i64)> = HashMap::new();
+    for row in rows {
+        let hour: i64 = row.try_get("hour_start").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let bucket = hour.div_euclid(bucket_seconds) * bucket_seconds;
+        let entry = values.entry(bucket).or_insert((0,0,0.0,0,0,0));
+        entry.0 += row.try_get::<i64,_>("messages").unwrap_or(0);
+        entry.1 += row.try_get::<i64,_>("scam_detections").unwrap_or(0);
+        entry.2 += row.try_get::<f64,_>("confidence_sum").unwrap_or(0.0);
+        entry.3 += row.try_get::<i64,_>("confidence_count").unwrap_or(0);
+        entry.4 += row.try_get::<i64,_>("deleted_messages").unwrap_or(0);
+        entry.5 += row.try_get::<i64,_>("timeouts").unwrap_or(0);
+    }
+    let mut buckets = Vec::with_capacity(periods as usize);
+    let mut total = (0_i64,0_i64,0.0_f64,0_i64,0_i64,0_i64);
+    for index in 0..periods {
+        let timestamp = start.div_euclid(bucket_seconds) * bucket_seconds + index * bucket_seconds;
+        let item = values.get(&timestamp).copied().unwrap_or((0,0,0.0,0,0,0));
+        total.0 += item.0; total.1 += item.1; total.2 += item.2; total.3 += item.3; total.4 += item.4; total.5 += item.5;
+        buckets.push(AnalyticsBucket {
+            timestamp, messages: item.0, scam_detections: item.1,
+            average_confidence: (item.3 > 0).then_some(item.2 / item.3 as f64),
+            deleted_messages: item.4, timeouts: item.5,
+        });
+    }
+    Ok(Json(AnalyticsResponse {
+        guild_id, range: range.to_owned(), timezone: "UTC",
+        totals: AnalyticsBucket {
+            timestamp: current, messages: total.0, scam_detections: total.1,
+            average_confidence: (total.3 > 0).then_some(total.2 / total.3 as f64),
+            deleted_messages: total.4, timeouts: total.5,
+        },
+        buckets,
+    }))
+}
+
 pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, logging_identifier: String, timeout_days: u64, runtime_info: SharedRuntimeInfo) -> Router {
     let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, http: reqwest::Client::new(), runtime_info };
     Router::new()
@@ -671,6 +747,7 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/api/runtime", get(get_runtime_info))
         .route("/api/guilds/:guild_id/beta-status", get(beta_status))
         .route("/api/guilds/:guild_id/moderation", get(moderation))
+        .route("/api/guilds/:guild_id/analytics", get(analytics))
         .route("/api/guilds/:guild_id/protection-options", get(protection_options))
         .route("/api/guilds/:guild_id/settings", get(get_settings).put(save_settings))
         .nest_service("/", ServeDir::new("dashboard"))
