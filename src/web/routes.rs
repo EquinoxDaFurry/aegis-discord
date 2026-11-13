@@ -1108,7 +1108,7 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/api/guilds/:guild_id/analytics", get(analytics))
         .route("/api/guilds/:guild_id/protection-options", get(protection_options))
         .route("/api/guilds/:guild_id/settings", get(get_settings).put(save_settings))
-        .nest_service("/", ServeDir::new("dashboard"))
+        .nest_service("/", ServeDir::new("dashboard").append_index_html_on_directories(true))
         .with_state(state)
 }
 
