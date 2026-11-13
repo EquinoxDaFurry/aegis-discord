@@ -24,6 +24,7 @@ struct FalsePositiveData {
 
 pub struct Handler {
     config: Config,
+    runtime_info: crate::web::SharedRuntimeInfo,
     text_detector: Arc<TextDetector>,
     image_detector: Arc<ImageDetector>,
     http: HttpClient,
@@ -36,9 +37,9 @@ pub struct Handler {
     image_semaphore: Arc<tokio::sync::Semaphore>,
 }
 impl Handler {
-    pub fn new(config: Config, text_detector: Arc<TextDetector>, image_detector: Arc<ImageDetector>) -> Self {
+    pub fn new(config: Config, text_detector: Arc<TextDetector>, image_detector: Arc<ImageDetector>, runtime_info: crate::web::SharedRuntimeInfo) -> Self {
         Self {
-            config, text_detector, image_detector,
+            config, runtime_info, text_detector, image_detector,
             http: HttpClient::builder().timeout(std::time::Duration::from_secs(15))
                 .build().expect("reqwest client configuration is valid"),
             incident_cooldowns: Mutex::new(HashMap::new()),
@@ -243,7 +244,13 @@ impl Handler {
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: serenity::all::Ready) {
         info!(user = %ready.user.name, user_id = %ready.user.id, "Aegis connected");
-        let activity = if ready.application.id.get() == BETA_APPLICATION_ID { "AEGIS BETA" } else { "protecting servers" };
+        let is_beta = ready.application.id.get() == BETA_APPLICATION_ID;
+        *self.runtime_info.write().await = Some(crate::web::RuntimeInfo {
+            bot_user_id: ready.user.id.to_string(),
+            bot_username: ready.user.name.clone(),
+            is_beta,
+        });
+        let activity = if is_beta { "AEGIS BETA" } else { "protecting servers" };
         ctx.shard.set_activity(Some(ActivityData::playing(activity)));
         let help_command = CreateCommand::new("help").description("Show information about the bot.");
         if let Err(error) = ctx.http.create_global_command(&help_command).await {
