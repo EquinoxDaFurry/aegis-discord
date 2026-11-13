@@ -36,8 +36,10 @@ async fn main() -> Result<()> {
     let oauth_client_secret = config.dashboard_oauth_client_secret.clone();
     let oauth_redirect_uri = config.dashboard_oauth_redirect_uri.clone();
     let bot_token = config.discord_token.clone();
+    let logging_identifier = config.logging_identifier.clone();
+    let timeout_days = config.timeout_days;
     let mut dashboard_task = tokio::spawn(async move {
-        web::run(dashboard_bind, dashboard_database, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, runtime_info).await
+        web::run(dashboard_bind, dashboard_database, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, runtime_info).await
     });
     tokio::select! {
         result = client.start() => {
