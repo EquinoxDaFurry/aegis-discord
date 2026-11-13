@@ -274,9 +274,9 @@ impl Handler {
             Ok(log_message) => {
                 let created_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
                 let case_status = if timeout_until.is_some() { "active" } else { "failed" };
-                if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, guild_name, member_id, moderator_id, reason, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, ?, NULL, ?, 'automatic_detection', ?, ?, ?, ?)")
+                if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, guild_name, member_id, moderator_id, reason, flagged_content, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, ?, NULL, ?, ?, 'automatic_detection', ?, ?, ?, ?)")
                     .bind(log_message.id.to_string()).bind(guild_id.to_string()).bind(guild_name.chars().take(100).collect::<String>())
-                    .bind(message.author.id.to_string()).bind(reason.chars().take(1000).collect::<String>()).bind(timeout_until).bind(case_status)
+                    .bind(message.author.id.to_string()).bind(reason.chars().take(1000).collect::<String>()).bind(safe_reason.clone()).bind(timeout_until).bind(case_status)
                     .bind(created_at).bind(message.link()).execute(&self.analytics_db).await {
                     warn!(%error, case_id = %log_message.id, "Could not persist moderation case for owner console");
                 }
@@ -405,10 +405,10 @@ impl Handler {
                 Ok(log_message) => {
                     let created_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
                     let status = if timeout_until.is_some() { "active" } else { "failed" };
-                    if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, guild_name, member_id, moderator_id, reason, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, ?, NULL, ?, 'cross_server_intelligence', ?, ?, ?, ?)")
+                    if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, guild_name, member_id, moderator_id, reason, flagged_content, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, ?, NULL, ?, ?, 'cross_server_intelligence', ?, ?, ?, ?)")
                         .bind(log_message.id.get().to_string()).bind(target_guild_id.get().to_string())
                         .bind(target_name.chars().take(100).collect::<String>()).bind(user_id.get().to_string())
-                        .bind("Cross Server Intelligence Network").bind(timeout_until).bind(status)
+                        .bind("Cross Server Intelligence Network").bind(safe_flagged.clone()).bind(timeout_until).bind(status)
                         .bind(created_at).bind(source_message.link()).execute(&self.analytics_db).await {
                         warn!(%error, "Could not persist cross-server moderation case");
                     }
@@ -742,8 +742,8 @@ impl EventHandler for Handler {
                 }).unwrap_or_default();
                 let cached = self.false_positive_reports.lock().ok().and_then(|reports| reports.get(&log_id).cloned());
                 let data = if let Some(data) = cached { Some(data) } else {
-                    sqlx::query_as::<_, (String, String, String, String, String)>(
-                        "SELECT guild_id, guild_name, member_id, reason, original_message_url FROM moderation_cases WHERE case_id = ?"
+                    sqlx::query_as::<_, (String, String, String, String, String, String)>(
+                        "SELECT guild_id, guild_name, member_id, reason, original_message_url, flagged_content FROM moderation_cases WHERE case_id = ?"
                     ).bind(log_id.to_string()).fetch_optional(&self.analytics_db).await.ok().flatten().and_then(|row| {
                         let mut parts = row.4.rsplit('/');
                         let message_id = parts.next()?;
@@ -753,7 +753,7 @@ impl EventHandler for Handler {
                         Some(FalsePositiveData {
                             user_mention: format!("<@{user_id}>"), user_id, guild_name: row.1,
                             guild_id, channel_name: format!("<#{channel_id}>"), reason: row.3,
-                            flagged_content: "Flagged content is unavailable after a bot restart.".to_owned(),
+                            flagged_content: if row.5.is_empty() { "Flagged content is unavailable for this older case.".to_owned() } else { row.5 },
                             message_url: format!("https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"),
                             images: Vec::new(),
                         })
