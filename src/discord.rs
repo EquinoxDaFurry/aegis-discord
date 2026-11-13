@@ -6,7 +6,6 @@ use serenity::{all::{ActionRowComponent, ButtonStyle, Context, CreateActionRow, 
 use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}};
 use tracing::{info, warn};
 
-const DEBUG_USER_ID: u64 = 1326970244673310730;
 const BETA_APPLICATION_ID: u64 = 1532972276805537792;
 
 #[derive(Clone)]
@@ -128,10 +127,12 @@ impl Handler {
     }
 
     async fn send_error_dm(&self, ctx: &Context, error_text: &str) {
-        if let Ok(user) = ctx.http.get_user(UserId::new(DEBUG_USER_ID)).await {
+        if let Some(owner_id) = std::env::var("AEGIS_OWNER_ID").ok().and_then(|value| value.parse::<u64>().ok()).map(UserId::new) {
+        if let Ok(user) = ctx.http.get_user(owner_id).await {
             let content = format!("⚠️ **Bot Error**\n\n```text\n{}
 ```", error_text.chars().take(1900).collect::<String>());
             let _ = user.dm(&ctx.http, CreateMessage::new().content(content)).await;
+        }
         }
     }
 
@@ -179,7 +180,7 @@ impl Handler {
             };
             match scan_result {
                 Ok(Some(scan)) => {
-                    if message.author.id.get() == DEBUG_USER_ID {
+                    if std::env::var("AEGIS_OWNER_ID").ok().and_then(|value| value.parse::<u64>().ok()) == Some(message.author.id.get()) {
                         if let Some(candidate) = scan.matches.first() {
                             info!(sha256 = %scan.sha256, filename = %candidate.filename,
                                 campaign = %candidate.campaign, confidence = candidate.confidence,
@@ -206,7 +207,7 @@ impl Handler {
         best.map(|(confidence, reason)| (reason, flagged, confidence))
     }
 
-    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, images: Vec<(String, Vec<u8>)>, settings: &serde_json::Value) {
+    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, timeout_until: Option<i64>, images: Vec<(String, Vec<u8>)>, settings: &serde_json::Value) {
         let Some(guild_id) = message.guild_id else { return };
         let channels = match guild_id.channels(&ctx.http).await {
             Ok(channels) => channels,
@@ -271,6 +272,14 @@ impl Handler {
         }
         match channel.send_message(&ctx.http, audit).await {
             Ok(log_message) => {
+                let created_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+                let case_status = if timeout_until.is_some() { "active" } else { "failed" };
+                if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, member_id, moderator_id, reason, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, NULL, ?, 'automatic_detection', ?, ?, ?, ?)")
+                    .bind(log_message.id.to_string()).bind(guild_id.to_string()).bind(message.author.id.to_string())
+                    .bind(reason.chars().take(1000).collect::<String>()).bind(timeout_until).bind(case_status)
+                    .bind(created_at).bind(message.link()).execute(&self.analytics_db).await {
+                    warn!(%error, case_id = %log_message.id, "Could not persist moderation case for owner console");
+                }
                 if let Ok(mut reports) = self.false_positive_reports.lock() {
                     reports.insert(log_message.id.get(), FalsePositiveData {
                         user_mention,
@@ -374,7 +383,11 @@ impl Handler {
                 }
             }
         }
-        self.send_audit_log(ctx, message, reason, flagged_content, deleted, &timeout_status, images, settings).await;
+        let timeout_until = if timeout_status == "Timed out successfully" {
+            Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64
+                + timeout_days.saturating_mul(86_400) as i64)
+        } else { None };
+        self.send_audit_log(ctx, message, reason, flagged_content, deleted, &timeout_status, timeout_until, images, settings).await;
     }
 }
 #[async_trait]
@@ -430,9 +443,11 @@ impl EventHandler for Handler {
                     }
                     Err(error) => {
                         warn!(%error, "Website heartbeat failed");
-                        if let Ok(user) = ctx.http.get_user(UserId::new(DEBUG_USER_ID)).await {
+                        if let Some(owner_id) = std::env::var("AEGIS_OWNER_ID").ok().and_then(|value| value.parse::<u64>().ok()).map(UserId::new) {
+                            if let Ok(user) = ctx.http.get_user(owner_id).await {
                             let content = format!("⚠️ **Bot Error**\n\n```text\nWebsite heartbeat failed: {}\n```", error);
                             let _ = user.dm(&ctx.http, CreateMessage::new().content(content)).await;
+                            }
                         }
                     }
                 }
@@ -533,6 +548,14 @@ impl EventHandler for Handler {
                 }
                 match serenity::all::ChannelId::new(channel_id).send_message(&ctx.http, report_message).await {
                     Ok(_) => {
+                        let report_insert = sqlx::query("INSERT OR IGNORE INTO false_positive_reports(case_id, reporter_id, report_reason, created_at, status) VALUES(?, ?, ?, ?, 'pending')")
+                            .bind(log_id.to_string()).bind(modal.user.id.to_string())
+                            .bind(reason.chars().take(1000).collect::<String>())
+                            .bind(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+                            .execute(&self.analytics_db).await;
+                        if let Err(error) = report_insert {
+                            warn!(%error, case_id = %log_id, "Could not persist false-positive report");
+                        }
                         let completed_button = CreateButton::new("aegis_false_positive")
                             .label("False Positive Submitted").emoji('✅')
                             .style(ButtonStyle::Secondary).disabled(true);
@@ -576,7 +599,7 @@ impl EventHandler for Handler {
             return;
         }
         if message.content.split_whitespace().next() == Some("!stats") {
-            if message.author.id.get() != DEBUG_USER_ID { return; }
+            if std::env::var("AEGIS_OWNER_ID").ok().and_then(|value| value.parse::<u64>().ok()) != Some(message.author.id.get()) { return; }
             let args: Vec<&str> = message.content.split_whitespace().collect();
             // Copy cached values into owned data so non-Send cache guards never cross an await.
             let mut guilds: Vec<(String, u64, Vec<u64>, serenity::all::GuildId)> =
