@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#08090b">
+  <meta name="description" content="Aegis Oxide server management dashboard">
+  <title>Aegis Oxide — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://use.typekit.net/scy5tri.css">
+  <link rel="stylesheet" href="dashboard.css">
+  <script defer src="dashboard.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#overview" aria-label="Aegis Oxide dashboard home">
+        <img src="https://aegisbot.pages.dev/assets/rustlogo.png" alt="" class="brand-logo">
+        <span><strong>AEGIS</strong><small>OXIDE CONTROL</small></span>
+      </a>
+      <div class="workspace-label">WORKSPACE</div>
+      <button class="server-picker" id="server-picker" type="button" aria-label="Back to server selection">
+        <span class="server-avatar" id="sidebar-server-avatar">?</span>
+        <span class="server-meta"><strong id="sidebar-server-name">Select a server</strong><small>Back to server selection</small></span>
+        <span class="chevron">↶</span>
+      </button>
+      <nav class="side-nav" aria-label="Main navigation">
+        <div class="nav-group-label">SERVER</div>
+        <a class="nav-link active" href="#overview" data-page="overview"><span class="nav-icon">▦</span>Overview</a>
+        <a class="nav-link" href="#moderation" data-page="moderation"><span class="nav-icon">⚖</span>Moderation</a>
+        <a class="nav-link" href="#protection" data-page="protection"><span class="nav-icon">⬡</span>Protection</a>
+        <a class="nav-link" href="#messages" data-page="messages"><span class="nav-icon">▤</span>Messages</a>
+        <a class="nav-link" href="#logging" data-page="logging"><span class="nav-icon">≡</span>Logging</a>
+        <a class="nav-link" href="#analytics" data-page="analytics"><span class="nav-icon">▥</span>Analytics</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="owner-card">
+          <div class="owner-card-top"><span class="owner-crown">♛</span><span>BOT OWNER</span><span class="owner-pill">PREVIEW</span></div>
+          <p>Global moderation and bot controls.</p>
+          <a class="owner-link" href="#owner" data-page="owner">Open owner console <span>→</span></a>
+        </div>
+        <div class="profile-row">
+          <div class="profile-avatar" id="profile-avatar">E</div>
+          <div class="profile-meta"><strong>Loading account…</strong><small>Discord account</small></div>
+          <button class="icon-button" aria-label="Account options" type="button">···</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <button class="mobile-menu icon-button" id="mobile-menu" aria-label="Toggle navigation" type="button">☰</button>
+        <div class="breadcrumbs"><span>Aegis Oxide</span><b>/</b><strong id="breadcrumb-current">Overview</strong></div>
+        <div class="topbar-right"><span class="connection"><i></i> DISCORD DASHBOARD</span><button class="help-button" type="button" id="help-button">Documentation ↗</button></div>
+      </header>
+
+      <div class="content-wrap">
+        <section class="page active" id="page-selector">
+          <div class="selector-heading">
+            <div><div class="eyebrow">AEGIS OXIDE / WORKSPACE</div><h1>Select a server</h1><p>Choose a Discord server to open its Aegis control panel.</p></div>
+            <img class="selector-logo" src="https://aegisbot.pages.dev/assets/rustlogo.png" alt="Aegis Oxide">
+          </div>
+          <div id="selector-loading" class="selector-message">Loading your Discord servers…</div>
+          <div id="selector-signin" class="selector-message" hidden><h2>Discord account not connected</h2><p>Connect your Discord account through the Aegis website, then return here to choose a server.</p><a class="button button-secondary" href="https://aegisdiscord.pages.dev/">Open Aegis website ↗</a></div>
+          <div id="selector-empty" class="selector-message" hidden><h2>No servers available</h2><p>Your Discord account did not return any servers. Check that you are signed in with the correct account.</p></div>
+          <div id="selector-manageable-section" hidden>
+            <div class="selector-section-heading"><div><h2>Manageable servers</h2><p>Servers where you have Administrator or Manage Server permission.</p></div><span class="section-indicator"><img src="https://aegisdiscord.pages.dev/assets/chaching.svg" alt=""> MANAGE ACCESS</span></div>
+            <div class="server-grid" id="server-grid-manageable"></div>
+          </div>
+          <div id="selector-other-section" hidden>
+            <div class="selector-section-heading other-heading"><div><h2>Other servers</h2><p>You can see these servers, but you don't have permission to manage them.</p></div><span class="section-indicator muted-indicator"><img src="https://aegisdiscord.pages.dev/assets/euheuh.svg" alt=""> VIEW ONLY</span></div>
+            <div class="server-grid" id="server-grid-other"></div>
+          </div>
+        </section>
+        <section class="page" id="page-overview">
+          <div class="page-heading">
+            <div><div class="eyebrow">SERVER CONTROL / OVERVIEW</div><h1 id="overview-title">Server overview</h1><p id="overview-subtitle">Live information for the selected Discord server.</p></div>
+            <div class="heading-actions"><span class="status-chip" id="overview-protection-chip"><i></i> Loading protection status</span><button class="button button-secondary" data-page-link="logging">Logging configuration <span>↗</span></button></div>
+          </div>
+          <div class="notice warning-notice" id="overview-beta-notice" hidden><span class="notice-mark">!</span><div><strong>You are using the Aegis Beta bot</strong><p>This server is currently protected by the beta instance of Aegis. Features and detection behaviour may change during testing.</p></div></div>
+          <div class="notice" id="overview-data-notice"><span class="notice-mark">i</span><div><strong>Live server data</strong><p>Overview statistics update from Aegis events and Discord moderation history.</p></div></div>
+          <div class="stat-grid">
+            <article class="stat-card"><div class="stat-top"><span>MESSAGES RECEIVED</span><span class="stat-icon">▤</span></div><strong id="overview-scanned">—</strong><small id="overview-scanned-note">Live event totals</small></article>
+            <article class="stat-card"><div class="stat-top"><span>THREATS DETECTED</span><span class="stat-icon red">⌁</span></div><strong id="overview-threats">—</strong><small id="overview-threats-note">Live event totals</small></article>
+            <article class="stat-card"><div class="stat-top"><span>MESSAGES REMOVED</span><span class="stat-icon">⌫</span></div><strong id="overview-removed">—</strong><small id="overview-removed-note">Live event totals</small></article>
+            <article class="stat-card"><div class="stat-top"><span>ACTIVE TIMEOUTS</span><span class="stat-icon">◷</span></div><strong id="overview-timeouts">—</strong><small id="overview-timeouts-note">Live event totals</small></article>
+          </div>
+          <div class="dashboard-grid">
+            <article class="panel activity-panel">
+              <div class="panel-heading"><div><h2>Recent activity</h2><p>Latest security events in this server</p></div><a href="#moderation" data-page="moderation">View moderation <span>→</span></a></div>
+              <div class="activity-empty" id="overview-activity-empty"><span>≡</span><strong>No activity data yet</strong><p>Real detections, timeouts and false-positive reports will appear here after bot integration.</p></div>
+              <div class="activity-list" id="overview-activity-list" hidden></div>
+            </article>
+            <article class="panel status-panel">
+              <div class="panel-heading"><div><h2>Protection status</h2><p>Selected server configuration</p></div><span class="live-dot">●</span></div>
+              <div class="protection-status" id="overview-protection-status"><div class="shield-mark">⬡</div><div><strong>Checking configuration…</strong><small>Loading saved server settings</small></div></div>
+              <div class="status-line"><span>Aegis protection</span><b id="overview-enabled" class="muted-state">UNKNOWN</b></div>
+              <div class="status-line"><span>Default timeout</span><b id="overview-timeout-days" class="muted-state">—</b></div>
+              <div class="status-line"><span>Image confidence threshold</span><b id="overview-threshold" class="muted-state">—</b></div>
+              <div class="status-line"><span>Discord bot connection</span><b class="muted-state">PENDING INTEGRATION</b></div>
+              <a class="panel-footer-link" href="#protection" data-page="protection">Configure protection <span>→</span></a>
+            </article>
+          </div>
+          <div class="bottom-grid">
+            <article class="panel"><div class="panel-heading"><div><h2>Quick configuration</h2><p>Common server controls</p></div></div><div class="quick-actions"><button data-page-link="messages"><span>▤</span><b>Customize bot messages</b><small>Set server-specific notification text</small><i>→</i></button><button data-page-link="logging"><span>≡</span><b>Configure logging</b><small>Choose where moderation events appear</small><i>→</i></button><button data-page-link="moderation"><span>⚖</span><b>Review moderation</b><small>Inspect recent actions and reports</small><i>→</i></button></div></article>
+            <article class="panel network-panel"><div class="panel-heading"><div><h2>Cross-Server Intelligence</h2><p>Future capability</p></div><span class="future-pill">PLANNED</span></div><div class="network-preview"><span class="network-icon">◎</span><div><strong>Not available yet</strong><p>Shared moderation signals and optional server participation are not part of this build.</p></div></div><div class="status-line"><span>Network participation</span><b class="muted-state">NOT IMPLEMENTED</b></div></article>
+          </div>
+        </section>
+        <section class="page" id="page-messages">
+          <div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / MESSAGES</div><h1>Bot messages</h1><p>Customize what Aegis says in this server. These templates are isolated per server.</p></div><span class="server-context"><span class="server-avatar small">N</span> Northstar Community</span></div>
+          <div class="notice"><span class="notice-mark">i</span><div><strong>Per-server message templates</strong><p>Saved templates are used by Aegis for timeout notices, detection logs, and false-positive confirmations.</p></div></div>
+          <div class="message-layout">
+            <div class="panel template-list">
+              <div class="panel-heading"><div><h2>Message templates</h2><p>Choose a message to edit</p></div></div>
+              <button class="template-choice selected" data-template="timeout"><span class="template-icon">◷</span><span><b>Timeout notice</b><small>Sent to a member after a timeout</small></span><i>→</i></button>
+              <button class="template-choice" data-template="detection"><span class="template-icon red">!</span><span><b>Detection alert</b><small>Posted in the moderation log</small></span><i>→</i></button>
+              <button class="template-choice" data-template="report"><span class="template-icon">⚑</span><span><b>False-positive received</b><small>Confirmation after a report</small></span><i>→</i></button>
+            </div>
+            <div class="panel editor-panel">
+              <div class="editor-title"><div><div class="eyebrow">EDIT TEMPLATE</div><h2 id="template-title">Timeout notice</h2><p id="template-description">Sent to the affected member when Aegis applies a timeout.</p></div><label class="switch-label"><input type="checkbox" id="template-enabled" checked><span class="switch"></span><b>Enabled</b></label></div>
+              <label class="field-label" for="message-content">MESSAGE CONTENT</label>
+              <textarea id="message-content" rows="9" spellcheck="false">Hey {user}, Aegis detected content that may be associated with a scam campaign in **{server}**.
+
+Your account has been timed out for {duration}.
+
+Reason: {reason}
+
+If you believe this is a mistake, please submit a false-positive report so the server team can review it.</textarea>
+              <div class="placeholder-box"><strong>AVAILABLE PLACEHOLDERS</strong><div class="placeholder-list"><button type="button" data-placeholder="{user}">{user}</button><button type="button" data-placeholder="{user_id}">{user_id}</button><button type="button" data-placeholder="{server}">{server}</button><button type="button" data-placeholder="{reason}">{reason}</button><button type="button" data-placeholder="{duration}">{duration}</button><button type="button" data-placeholder="{channel}">{channel}</button><button type="button" data-placeholder="{flagged_content}">{flagged_content}</button><button type="button" data-placeholder="{report_server}">{report_server}</button><button type="button" data-placeholder="{deleted}">{deleted}</button><button type="button" data-placeholder="{timeout_status}">{timeout_status}</button></div><small>Click a placeholder to insert it at your cursor.</small></div>
+              <div class="preview-box"><div class="preview-head"><strong>MESSAGE PREVIEW</strong><span>EXAMPLE OUTPUT</span></div><div class="discord-message"><div class="bot-avatar">A</div><div><b>Aegis Oxide <span>APP</span></b><p id="message-preview">Hey @sample_member, Aegis detected content that may be associated with a scam campaign in **Northstar Community**.<br><br>Your account has been timed out for 7 days.<br><br>Reason: Suspicious campaign link<br><br>If you believe this is a mistake, please submit a false-positive report so the server team can review it.</p></div></div></div>
+              <div class="editor-footer"><span id="message-status">Unsaved preview changes</span><button class="button button-primary" id="save-message">Save template <span>→</span></button></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="page-owner">
+          <div class="page-heading"><div><div class="eyebrow">GLOBAL CONTROLS / OWNER CONSOLE</div><h1>Owner console</h1><p>Bot-wide moderation oversight and false-positive review.</p></div><span class="owner-only-chip">♛ OWNER ONLY · PREVIEW</span></div>
+          <div class="notice warning-notice"><span class="notice-mark">!</span><div><strong>Owner actions are not connected yet</strong><p>This panel uses sample cases. Reversal controls will call Discord through the Rust backend once implemented.</p></div></div>
+          <div class="stat-grid owner-stats"><article class="stat-card"><div class="stat-top"><span>RECENT TIMEOUTS</span><span class="stat-icon">◷</span></div><strong>24</strong><small><span>Across all servers · sample</span></small></article><article class="stat-card"><div class="stat-top"><span>FALSE-POSITIVE REPORTS</span><span class="stat-icon amber">⚑</span></div><strong>5</strong><small><span>Awaiting owner review · sample</span></small></article><article class="stat-card"><div class="stat-top"><span>REVERSED ACTIONS</span><span class="stat-icon">↶</span></div><strong>3</strong><small><span>Recorded reversals · sample</span></small></article><article class="stat-card"><div class="stat-top"><span>ACTIVE CASES</span><span class="stat-icon red">!</span></div><strong>8</strong><small><span>Not yet reviewed · sample</span></small></article></div>
+          <article class="panel owner-table-panel"><div class="panel-heading"><div><h2>Recent timeout actions</h2><p>Cross-server moderation timeline</p></div><div class="table-tools"><input id="case-search" type="search" placeholder="Search member or server…"><select id="case-filter" aria-label="Filter cases"><option value="all">All cases</option><option value="active">Active</option><option value="reported">Reported</option><option value="reversed">Reversed</option></select></div></div>
+            <div class="table-scroll"><table><thead><tr><th>MEMBER / SERVER</th><th>REASON</th><th>TIMEOUT</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="case-rows">
+              <tr data-status="reported" data-search="sample member northstar community suspicious campaign link"><td><b>sample_member</b><small>Northstar Community · 1029384756</small></td><td>Suspicious campaign link</td><td>7 days</td><td><span class="table-status reported">REPORT RECEIVED</span></td><td><button class="text-action" data-case-action="1">Review case</button></td></tr>
+              <tr data-status="active" data-search="member 204 quiet corner known scam phrase"><td><b>member_204</b><small>Quiet Corner · 2039485761</small></td><td>Known scam phrase</td><td>3 days</td><td><span class="table-status active">ACTIVE</span></td><td><button class="text-action" data-case-action="2">View details</button></td></tr>
+              <tr data-status="reversed" data-search="another member northstar community image false positive"><td><b>another_member</b><small>Northstar Community · 1029384756</small></td><td>Image campaign match</td><td>7 days</td><td><span class="table-status reversed">REVERSED</span></td><td><span class="muted-cell">Already reversed</span></td></tr>
+              <tr data-status="active" data-search="member 891 night shift suspicious url"><td><b>member_891</b><small>Night Shift · 3094857612</small></td><td>Suspicious URL pattern</td><td>1 day</td><td><span class="table-status active">ACTIVE</span></td><td><button class="text-action" data-case-action="4">View details</button></td></tr>
+            </tbody></table></div>
+            <div class="table-foot"><span>Showing sample cases · not live Discord data</span><span>Reversals will be audited</span></div>
+          </article>
+          <div class="owner-safety"><span>⬡</span><div><strong>Reversal safety checks</strong><p>The live implementation will verify the original action, confirm the timeout is still active, prevent duplicate reversals, and record the owner ID, timestamp, and reason.</p></div></div>
+        </section>
+
+        <section class="page" id="page-moderation">
+          <div class="page-heading">
+            <div><div class="eyebrow">SERVER SECURITY / MODERATION HISTORY</div><h1>Moderation</h1><p>Successful Aegis timeouts recorded in this server's Discord logging channel.</p></div>
+            <div class="heading-actions"><span class="server-context" id="moderation-window">LAST 9 DAYS</span><button class="button button-secondary" id="moderation-refresh" type="button">↻ Refresh</button></div>
+          </div>
+          <div class="notice" id="moderation-warning" hidden><span class="notice-mark">!</span><div><strong id="moderation-warning-title">Moderation history unavailable</strong><p id="moderation-warning-text"></p></div></div>
+          <div class="stat-grid moderation-stats">
+            <article class="stat-card"><div class="stat-top"><span>SUCCESSFUL TIMEOUTS</span><span class="stat-icon">◷</span></div><strong id="moderation-total">—</strong><small>Found in the last 9 days</small></article>
+            <article class="stat-card"><div class="stat-top"><span>ACTIVE</span><span class="stat-icon">●</span></div><strong id="moderation-active">—</strong><small>Currently timed out</small></article>
+            <article class="stat-card"><div class="stat-top"><span>EXPIRED</span><span class="stat-icon">✓</span></div><strong id="moderation-expired">—</strong><small>Timeout ended naturally</small></article>
+            <article class="stat-card"><div class="stat-top"><span>ENDED EARLY</span><span class="stat-icon amber">↶</span></div><strong id="moderation-ended">—</strong><small>Timeout removed before expiry</small></article>
+          </div>
+          <article class="panel moderation-list-panel">
+            <div class="panel-heading moderation-toolbar">
+              <div><h2>Timeout history</h2><p>Only Aegis-authored detection logs with a successful timeout are included.</p></div>
+              <div class="table-tools"><input id="moderation-search" type="search" placeholder="Search user or reason…" aria-label="Search moderation history"><select id="moderation-filter" aria-label="Filter timeout status"><option value="all">All statuses</option><option value="active">Active</option><option value="expired">Expired</option><option value="ended_early">Ended early</option><option value="unknown">Unverified</option></select></div>
+            </div>
+            <div class="table-scroll">
+              <table class="moderation-table">
+                <thead><tr><th>MEMBER</th><th>REASON</th><th>DURATION</th><th>DETECTED</th><th>STATUS</th><th></th></tr></thead>
+                <tbody id="moderation-rows"><tr><td colspan="6" class="muted-cell">Loading moderation history…</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot"><span id="moderation-count">Loading…</span><span id="moderation-source">Discord logging channel</span></div>
+          </article>
+          <article class="panel moderation-detail" id="moderation-detail" hidden>
+            <div class="panel-heading"><div><h2>Incident details</h2><p id="moderation-detail-subtitle">Selected detection record</p></div><button class="button button-secondary" id="moderation-close-detail" type="button">Close</button></div>
+            <div id="moderation-detail-content"></div>
+          </article>
+          <div class="notice moderation-footnote"><span class="notice-mark">i</span><div><strong>How this history works</strong><p>Records are read directly from Aegis's Discord logging channel. The dashboard does not create duplicate moderation records. Historical timeout status is inferred from the member's current Discord timeout and the configured timeout duration.</p></div></div>
+        </section>
+        <section class="page" id="page-protection">
+          <div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / PROTECTION</div><h1>Protection</h1><p>Configure detection and automated responses for <strong id="protection-server-name">your server</strong>.</p></div><div class="heading-actions"><span class="status-chip">PER-SERVER CONFIGURATION</span></div></div>
+          <form id="protection-form">
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Detection</h2><p>Choose what Aegis scans and how confident a match must be.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Enable protection</b><small>Master switch for Aegis protection in this server.</small></span><input id="protection-enabled" type="checkbox"><i class="switch"></i></label>
+                <label class="protection-setting"><span><b>Text scam detection</b><small>Scan message text for known scam patterns.</small></span><input id="protection-text" type="checkbox"><i class="switch"></i></label>
+                <label class="protection-setting"><span><b>Image scam detection</b><small>Check images against known scam campaigns.</small></span><input id="protection-image" type="checkbox"><i class="switch"></i></label>
+                <div class="protection-control"><label for="protection-threshold">IMAGE MATCH CONFIDENCE THRESHOLD</label><div class="range-line"><input id="protection-threshold" type="range" min="0.5" max="1" step="0.005"><output id="protection-threshold-value">80.5%</output></div><small>Higher values require a stronger image match before action.</small></div>
+              </div>
+            </div>
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Automatic enforcement</h2><p>Choose what happens when Aegis detects a qualifying scam.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Automatic message deletion</b><small>Delete the detected message.</small></span><input id="protection-delete" type="checkbox"><i class="switch"></i></label>
+                <label class="protection-setting"><span><b>Automatic timeouts</b><small>Temporarily restrict the detected account.</small></span><input id="protection-timeout" type="checkbox"><i class="switch"></i></label>
+                <div class="protection-control"><label for="protection-timeout-days">DEFAULT TIMEOUT DURATION</label><div class="inline-input"><input id="protection-timeout-days" type="number" min="1" max="7" step="1"><span>days</span></div><small>Between 1 and 7 days.</small></div>
+              </div>
+            </div>
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Exemptions</h2><p>Exclude trusted members and channels from automated detection.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Exempt administrators</b><small>Do not apply automatic detection actions to server administrators.</small></span><input id="protection-admins" type="checkbox"><i class="switch"></i></label>
+                <div class="protection-control"><label>EXEMPT ROLES</label><details class="protection-dropdown" id="protection-roles-dropdown"><summary><span id="protection-roles-summary">Choose roles</span><span class="dropdown-chevron">⌄</span></summary><div class="protection-dropdown-menu" id="protection-roles-options"><p class="dropdown-empty">Loading roles…</p></div></details><small>Choose any roles that should be exempt from automatic detection.</small></div>
+                <div class="protection-control"><label>IGNORED CHANNELS</label><details class="protection-dropdown" id="protection-channels-dropdown"><summary><span id="protection-channels-summary">Choose channels</span><span class="dropdown-chevron">⌄</span></summary><div class="protection-dropdown-menu" id="protection-channels-options"><p class="dropdown-empty">Loading channels…</p></div></details><small>Messages in selected channels will be excluded from detection.</small></div>
+              </div>
+            </div>
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Advanced</h2><p>Test detection safely without applying moderation actions.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Dry-run mode</b><small>Continue detecting and logging, but do not delete messages or timeout users.</small></span><input id="protection-dry-run" type="checkbox"><i class="switch"></i></label>
+              </div>
+            </div>
+            <div class="protection-save"><span id="protection-status" role="status" aria-live="polite">Loading server settings…</span><button class="button button-primary" type="submit">Save protection settings →</button></div>
+          </form>
+          <p class="protection-disclaimer">Settings are saved separately for each server and applied by the Aegis bot automatically.</p>
+        </section>
+                <section class="page" id="page-logging"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose where Aegis sends moderation and security events.</p></div></div><div class="panel placeholder-panel"><span>≡</span><h2>Logging configuration</h2><p>Channel selection and event categories will be connected to the bot configuration API.</p></div></section>
+        <section class="page" id="page-analytics">
+          <div class="page-heading"><div><div class="eyebrow">SERVER INSIGHTS / ANALYTICS</div><h1>Analytics</h1><p>Message activity, scam detections, and moderation trends for this server.</p></div><button class="button button-secondary" id="analytics-refresh" type="button">↻ Refresh</button></div>
+          <div class="analytics-toolbar">
+            <div class="analytics-range" role="group" aria-label="Analytics time range">
+              <button type="button" data-analytics-range="day">Day</button><button type="button" data-analytics-range="week" class="selected">Week</button><button type="button" data-analytics-range="month">Month</button>
+            </div>
+            <div class="analytics-chart-style" role="group" aria-label="Graph style">
+              <button type="button" data-analytics-style="line" class="selected">Line</button><button type="button" data-analytics-style="bar">Bar</button>
+            </div>
+          </div>
+          <div class="analytics-stats">
+            <article class="analytics-stat"><span>MESSAGES</span><strong id="analytics-messages">—</strong><small>All server messages</small></article>
+            <article class="analytics-stat"><span>SCAM DETECTIONS</span><strong id="analytics-scams">—</strong><small>Every detection</small></article>
+            <article class="analytics-stat"><span>AVG. CONFIDENCE</span><strong id="analytics-confidence">—</strong><small>Image detections with a score</small></article>
+            <article class="analytics-stat"><span>MESSAGES DELETED</span><strong id="analytics-deleted">—</strong><small>Successful deletions</small></article>
+            <article class="analytics-stat"><span>SUCCESSFUL TIMEOUTS</span><strong id="analytics-timeouts">—</strong><small>Applied by Aegis</small></article>
+          </div>
+          <div class="analytics-charts">
+            <article class="panel analytics-chart-panel"><div class="analytics-chart-heading"><div><h2>Message frequency</h2><p>Every message received in this server</p></div><span id="analytics-message-period">LAST 7 DAYS</span></div><div class="analytics-chart" id="analytics-message-chart"><div class="analytics-chart-empty">Waiting for analytics data…</div></div></article>
+            <article class="panel analytics-chart-panel"><div class="analytics-chart-heading"><div><h2>Scam frequency</h2><p>Every scam detection, whether or not action was taken</p></div><span id="analytics-scam-period">LAST 7 DAYS</span></div><div class="analytics-chart" id="analytics-scam-chart"><div class="analytics-chart-empty">Waiting for analytics data…</div></div></article>
+          </div>
+          <p class="analytics-footnote" id="analytics-footnote">Analytics counts begin when tracking is enabled. No message content is stored for these statistics. Times are shown in UTC.</p>
+          <div class="analytics-warning" id="analytics-warning" role="status" hidden></div>
+        </section>
+        <footer class="app-footer"><span>AEGIS OXIDE <b>CONTROL PANEL</b></span><span>INDEPENDENT DASHBOARD · MAIN WEBSITE UNCHANGED</span></footer>
+      </div>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

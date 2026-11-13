@@ -1,7 +1,7 @@
-use super::{database::{ImageHashRecord, RuleDatabase}, Detection, DetectionKind};
+use super::database::{ImageHashRecord, RuleDatabase};
 use image::{imageops::FilterType, DynamicImage, GenericImageView, GrayImage, Luma};
 use sha2::{Digest, Sha256};
-use std::{collections::{HashMap, VecDeque}, sync::RwLock};
+use std::{collections::{HashMap, VecDeque}, io::Cursor, sync::RwLock};
 
 const HASH_BITS: f64 = 64.0;
 const PHASH_PREFILTER: f64 = 0.70;
@@ -26,6 +26,9 @@ impl ImageDetector {
         Self { records: db.image_hashes.clone(), exact, cache: RwLock::new((HashMap::new(), VecDeque::new())), cache_limit, threshold }
     }
     pub fn scan(&self, bytes: &[u8]) -> anyhow::Result<Option<ImageScan>> {
+        self.scan_with_threshold(bytes, self.threshold)
+    }
+    pub fn scan_with_threshold(&self, bytes: &[u8], threshold: f64) -> anyhow::Result<Option<ImageScan>> {
         if bytes.is_empty() { return Ok(None); }
         let sha = hex::encode(Sha256::digest(bytes));
         if let Some(index) = self.exact.get(&sha) {
@@ -42,7 +45,20 @@ impl ImageDetector {
             }
             value
         } else {
-            let image = normalize_image(image::load_from_memory(bytes)?);
+            // Decode untrusted uploads with strict resource limits. A tiny malformed
+            // image can otherwise claim enormous dimensions or consume excessive CPU/RAM.
+            let mut reader = image::ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(8192);
+            limits.max_image_height = Some(8192);
+            limits.max_alloc = Some(64 * 1024 * 1024);
+            reader.limits(limits);
+            let decoded = reader.decode()?;
+            let (width, height) = decoded.dimensions();
+            if width == 0 || height == 0 || u64::from(width) * u64::from(height) > 32_000_000 {
+                anyhow::bail!("image dimensions exceed the scan safety limit");
+            }
+            let image = normalize_image(decoded);
             let value = generate_hashes(&image);
             if let Ok(mut cache) = self.cache.write() {
                 if self.cache_limit > 0 {
@@ -64,7 +80,7 @@ impl ImageDetector {
             let d = similarity(hashes.1, record.dhash);
             let a = similarity(hashes.2, record.ahash);
             let confidence = p * PHASH_WEIGHT + d * DHASH_WEIGHT + a * AHASH_WEIGHT;
-            if confidence >= self.threshold && p >= MIN_PHASH_SIMILARITY && d >= MIN_DHASH_SIMILARITY {
+            if confidence >= threshold && p >= MIN_PHASH_SIMILARITY && d >= MIN_DHASH_SIMILARITY {
                 matches.push(ImageMatch { filename: record.filename.clone(), campaign: record.campaign.clone(), confidence });
             }
         }
@@ -148,6 +164,18 @@ fn similarity(a: u64, b: u64) -> f64 { 1.0 - ((a ^ b).count_ones() as f64 / HASH
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn malformed_image_bytes_fail_without_panicking() {
+        let detector = ImageDetector {
+            records: Vec::new(),
+            exact: HashMap::new(),
+            cache: RwLock::new((HashMap::new(), VecDeque::new())),
+            cache_limit: 8,
+            threshold: 0.8,
+        };
+        assert!(detector.scan(b"not a valid PNG").is_err());
+    }
+
     #[test]
     fn identical_hashes_have_full_similarity() { assert_eq!(similarity(0x1234, 0x1234), 1.0); }
     #[test]

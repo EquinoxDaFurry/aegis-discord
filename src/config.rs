@@ -15,6 +15,11 @@ pub struct Config {
     pub false_positive_channel_id: Option<String>,
     pub website_api: Option<String>,
     pub api_key: Option<String>,
+    pub dashboard_bind: String,
+    pub dashboard_database_path: PathBuf,
+    pub dashboard_oauth_client_id: String,
+    pub dashboard_oauth_client_secret: String,
+    pub dashboard_oauth_redirect_uri: String,
 }
 
 impl Config {
@@ -36,6 +41,12 @@ impl Config {
                 .filter(|value| !value.trim().is_empty()),
             website_api: env::var("WEBSITE_API").ok().filter(|value| !value.trim().is_empty()),
             api_key: env::var("API_KEY").ok().filter(|value| !value.trim().is_empty()),
+            dashboard_bind: env::var("AEGIS_DASHBOARD_BIND").unwrap_or_else(|_| "127.0.0.1:8080".to_owned()),
+            dashboard_database_path: env::var_os("AEGIS_DASHBOARD_DATABASE").map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("aegis-dashboard.sqlite3")),
+            dashboard_oauth_client_id: env::var("AEGIS_DISCORD_CLIENT_ID").unwrap_or_default(),
+            dashboard_oauth_client_secret: env::var("AEGIS_DISCORD_CLIENT_SECRET").unwrap_or_default(),
+            dashboard_oauth_redirect_uri: env::var("AEGIS_DISCORD_REDIRECT_URI").unwrap_or_default(),
         })
     }
 }
