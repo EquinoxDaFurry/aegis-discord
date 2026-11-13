@@ -511,7 +511,7 @@ impl Handler {
                   ("server", guild_name.clone()), ("duration", timeout_days.to_string()),
                   ("channel", format!("<#{}>", message.channel_id)), ("reason", reason.to_owned()),
                   ("flagged_content", flagged_text), ("report_server", self.config.dm_report_server.clone()),
-                  ("deleted", deleted.to_string()), ("timeout_status", timeout_status.clone())], 1900);
+                  ("deleted", deleted.to_string()), ("timeout_status", timeout_status.clone())], 1800);
             if let Some(dm_text) = dm_text {
                 let mut dm = CreateMessage::new().content(format!("{}\n\n**If this was wrong, please click the button below.**", dm_text));
                 if let Some(case_id) = case_id {
