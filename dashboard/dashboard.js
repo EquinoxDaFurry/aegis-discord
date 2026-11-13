@@ -722,7 +722,8 @@ navigate("selector");
       "protection-delete": settings.auto_delete,
       "protection-timeout": settings.auto_timeout,
       "protection-admins": settings.exempt_admins,
-      "protection-dry-run": settings.dry_run
+      "protection-dry-run": settings.dry_run,
+      "protection-cross-server-intelligence": settings.cross_server_intelligence !== false
     };
     Object.entries(values).forEach(([id, value]) => {
       const input = document.getElementById(id);
@@ -751,6 +752,7 @@ navigate("selector");
       auto_timeout: document.getElementById("protection-timeout").checked,
       timeout_days: Math.min(7, Math.max(1, Number(document.getElementById("protection-timeout-days").value))),
       dry_run: document.getElementById("protection-dry-run").checked,
+      cross_server_intelligence: document.getElementById("protection-cross-server-intelligence").checked,
       exempt_admins: document.getElementById("protection-admins").checked,
       exempt_role_ids: selectedValues("protection-roles-options"),
       ignored_channel_ids: selectedValues("protection-channels-options"),
