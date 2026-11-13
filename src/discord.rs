@@ -231,7 +231,7 @@ impl Handler {
               ("reason", reason.to_owned()), ("flagged_content", safe_reason.clone()),
               ("channel", channel_mention.clone()), ("deleted", deleted.to_string()),
               ("timeout_status", timeout_status.to_owned())], 3900)
-            .unwrap_or_else(|| "🚨 Scam Detected\nPossible scam content detected.".to_owned());
+            .unwrap_or_else(|| "Possible scam content detected.".to_owned());
         let has_sections = Self::template_section(&detection_text, "User").is_some()
             && Self::template_section(&detection_text, "Reason").is_some();
         let description = if has_sections {
