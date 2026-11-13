@@ -43,6 +43,7 @@ navigate("selector");
   let activeGuild = null;
   let signedIn = false;
   let currentSettings = null;
+  let runtimeInfo = null;
   const settingsPage = document.getElementById("page-settings");
   const asset = name => "https://aegisdiscord.pages.dev/assets/" + name;
 
@@ -192,8 +193,24 @@ navigate("selector");
     } catch (error) { status.textContent = error.message; }
   }
 
+  function renderRuntimeWarning() {
+    const warning = document.getElementById("overview-beta-notice");
+    if (warning) warning.hidden = !runtimeInfo?.is_beta;
+  }
+
+  async function loadRuntimeInfo() {
+    try {
+      runtimeInfo = await api("/api/runtime");
+      renderRuntimeWarning();
+    } catch (_) {
+      runtimeInfo = null;
+      renderRuntimeWarning();
+    }
+  }
+
   function renderOverview() {
     if (!activeGuild) return;
+    renderRuntimeWarning();
     document.getElementById("overview-title").textContent = activeGuild.name + " overview";
     document.getElementById("overview-subtitle").textContent = "Security and protection information for " + activeGuild.name + ".";
     const chip = document.getElementById("overview-protection-chip");
@@ -244,6 +261,7 @@ navigate("selector");
   }
 
   async function initialize() {
+    await loadRuntimeInfo();
     try {
       const data = await api("/api/me");
       signedIn = true;
