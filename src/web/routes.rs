@@ -344,7 +344,7 @@ async fn moderation(
         let (username,avatar_url,live_timeout,member_present) = member_cache.get(&user_id).cloned().unwrap_or_else(|| (user_id.clone(),None,None,false));
         let expected_until = created_at.saturating_add((state.timeout_days.min(i64::MAX as u64 / 86_400)) as i64 * 86_400);
         let currently_timed_out = live_timeout.is_some();
-        let status = if !member_present { "unknown" } else if currently_timed_out && active_assigned.insert(user_id.clone()) { "active" } else if now() < expected_until { "ended_early" } else { "expired" }.to_owned();
+        let status = (if !member_present { "unknown" } else if currently_timed_out && active_assigned.insert(user_id.clone()) { "active" } else if now() < expected_until { "ended_early" } else { "expired" }).to_owned();
         let timeout_until = if status == "active" { live_timeout } else { Some(expected_until.to_string()) };
         let log_url = format!("https://discord.com/channels/{}/{}/{}", guild.id, log_channel_id, message_id);
         incidents.push(ModerationIncident { id: message_id, user_id, username, avatar_url, reason, flagged_content,
