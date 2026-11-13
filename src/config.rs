@@ -16,7 +16,7 @@ pub struct Config {
     pub website_api: Option<String>,
     pub api_key: Option<String>,
     pub dashboard_bind: String,
-    pub dashboard_database_path: PathBuf,
+    pub dashboard_database_path: PathBuf,\n    pub dashboard_oauth_client_id: String,\n    pub dashboard_oauth_client_secret: String,\n    pub dashboard_oauth_redirect_uri: String,
 }
 
 impl Config {
