@@ -819,7 +819,8 @@ async fn analytics(
         _ => return Err(StatusCode::BAD_REQUEST),
     };
     let current = now();
-    let start = current - periods * bucket_seconds;
+    // Anchor the window to the current bucket so the latest hour/day is included.
+    let start = current.div_euclid(bucket_seconds) * bucket_seconds - (periods - 1) * bucket_seconds;
     let rows = sqlx::query("SELECT hour_start, messages, scam_detections, confidence_sum, confidence_count, deleted_messages, timeouts FROM analytics_hourly WHERE guild_id = ? AND hour_start >= ? ORDER BY hour_start")
         .bind(&guild.id).bind(start).fetch_all(&state.db).await
         .map_err(|error| { tracing::error!(%error, guild_id = %guild.id, "Could not load analytics aggregates"); StatusCode::INTERNAL_SERVER_ERROR })?;
@@ -838,7 +839,7 @@ async fn analytics(
     let mut buckets = Vec::with_capacity(periods as usize);
     let mut total = (0_i64,0_i64,0.0_f64,0_i64,0_i64,0_i64);
     for index in 0..periods {
-        let timestamp = start.div_euclid(bucket_seconds) * bucket_seconds + index * bucket_seconds;
+        let timestamp = start + index * bucket_seconds;
         let item = values.get(&timestamp).copied().unwrap_or((0,0,0.0,0,0,0));
         total.0 += item.0; total.1 += item.1; total.2 += item.2; total.3 += item.3; total.4 += item.4; total.5 += item.5;
         buckets.push(AnalyticsBucket {
