@@ -17,14 +17,14 @@
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="#overview" aria-label="Aegis Oxide dashboard home">
-        <img src="https://aegisdiscord.pages.dev/assets/rustlogo.svg" alt="" class="brand-logo">
+        <img src="https://aegisdiscord.pages.dev/assets/rustlogo.png" alt="" class="brand-logo">
         <span><strong>AEGIS</strong><small>OXIDE CONTROL</small></span>
       </a>
       <div class="workspace-label">WORKSPACE</div>
-      <button class="server-picker" id="server-picker" type="button">
-        <span class="server-avatar">N</span>
-        <span class="server-meta"><strong>Northstar Community</strong><small>Server dashboard</small></span>
-        <span class="chevron">⌄</span>
+      <button class="server-picker" id="server-picker" type="button" aria-label="Back to server selection">
+        <span class="server-avatar" id="sidebar-server-avatar">?</span>
+        <span class="server-meta"><strong id="sidebar-server-name">Select a server</strong><small>Back to server selection</small></span>
+        <span class="chevron">↶</span>
       </button>
       <nav class="side-nav" aria-label="Main navigation">
         <div class="nav-group-label">SERVER</div>
@@ -47,7 +47,7 @@
         </div>
         <div class="profile-row">
           <div class="profile-avatar">E</div>
-          <div class="profile-meta"><strong>Demo account</strong><small>Discord preview</small></div>
+          <div class="profile-meta"><strong>Loading account…</strong><small>Discord account</small></div>
           <button class="icon-button" aria-label="Account options" type="button">···</button>
         </div>
       </div>
@@ -57,48 +57,60 @@
       <header class="topbar">
         <button class="mobile-menu icon-button" id="mobile-menu" aria-label="Toggle navigation" type="button">☰</button>
         <div class="breadcrumbs"><span>Aegis Oxide</span><b>/</b><strong id="breadcrumb-current">Overview</strong></div>
-        <div class="topbar-right"><span class="connection"><i></i> UI PREVIEW</span><button class="help-button" type="button" id="help-button">Documentation ↗</button></div>
+        <div class="topbar-right"><span class="connection"><i></i> DISCORD DASHBOARD</span><button class="help-button" type="button" id="help-button">Documentation ↗</button></div>
       </header>
 
       <div class="content-wrap">
-        <section class="page active" id="page-overview">
-          <div class="page-heading">
-            <div><div class="eyebrow">SERVER CONTROL / OVERVIEW</div><h1>Good to have you back.</h1><p>Here's what's happening in Northstar Community.</p></div>
-            <div class="heading-actions"><span class="status-chip"><i></i> Protection enabled</span><button class="button button-secondary" data-page-link="settings">Server settings <span>↗</span></button></div>
+        <section class="page active" id="page-selector">
+          <div class="selector-heading">
+            <div><div class="eyebrow">AEGIS OXIDE / WORKSPACE</div><h1>Select a server</h1><p>Choose a Discord server to open its Aegis control panel.</p></div>
+            <img class="selector-logo" src="https://aegisdiscord.pages.dev/assets/rustlogo.png" alt="Aegis Oxide">
           </div>
-          <div class="notice"><span class="notice-mark">i</span><div><strong>Dashboard preview</strong><p>This is the first UI pass. It isn't connected to Discord or a database yet; displayed activity is sample data.</p></div><button class="notice-close" aria-label="Dismiss notice" type="button">×</button></div>
+          <div id="selector-loading" class="selector-message">Loading your Discord servers…</div>
+          <div id="selector-signin" class="selector-message" hidden><h2>Discord account not connected</h2><p>Connect your Discord account through the Aegis website, then return here to choose a server.</p><a class="button button-secondary" href="https://aegisdiscord.pages.dev/">Open Aegis website ↗</a></div>
+          <div id="selector-empty" class="selector-message" hidden><h2>No servers available</h2><p>Your Discord account did not return any servers. Check that you are signed in with the correct account.</p></div>
+          <div id="selector-manageable-section" hidden>
+            <div class="selector-section-heading"><div><h2>Manageable servers</h2><p>Servers where you have Administrator or Manage Server permission.</p></div><span class="section-indicator"><img src="https://aegisdiscord.pages.dev/assets/chaching.svg" alt=""> MANAGE ACCESS</span></div>
+            <div class="server-grid" id="server-grid-manageable"></div>
+          </div>
+          <div id="selector-other-section" hidden>
+            <div class="selector-section-heading other-heading"><div><h2>Other servers</h2><p>You can see these servers, but you don't have permission to manage them.</p></div><span class="section-indicator muted-indicator"><img src="https://aegisdiscord.pages.dev/assets/euheuh.svg" alt=""> VIEW ONLY</span></div>
+            <div class="server-grid" id="server-grid-other"></div>
+          </div>
+        </section>
+        <section class="page" id="page-overview">
+          <div class="page-heading">
+            <div><div class="eyebrow">SERVER CONTROL / OVERVIEW</div><h1 id="overview-title">Server overview</h1><p id="overview-subtitle">Live information for the selected Discord server.</p></div>
+            <div class="heading-actions"><span class="status-chip" id="overview-protection-chip"><i></i> Loading protection status</span><button class="button button-secondary" data-page-link="settings">Server settings <span>↗</span></button></div>
+          </div>
+          <div class="notice" id="overview-data-notice"><span class="notice-mark">i</span><div><strong>Bot integration pending</strong><p>Server configuration is available now. Detection statistics and moderation activity will populate when the Discord bot is connected.</p></div></div>
           <div class="stat-grid">
-            <article class="stat-card"><div class="stat-top"><span>MESSAGES SCANNED</span><span class="stat-icon">▤</span></div><strong>18,492</strong><small class="positive">↑ 12.8% <span>this week</span></small></article>
-            <article class="stat-card"><div class="stat-top"><span>THREATS DETECTED</span><span class="stat-icon red">⌁</span></div><strong>37</strong><small><span>Across this server</span></small></article>
-            <article class="stat-card"><div class="stat-top"><span>MESSAGES REMOVED</span><span class="stat-icon">⌫</span></div><strong>34</strong><small><span>3 needed manual review</span></small></article>
-            <article class="stat-card"><div class="stat-top"><span>ACTIVE TIMEOUTS</span><span class="stat-icon">◷</span></div><strong>2</strong><small><span>Current server only</span></small></article>
+            <article class="stat-card"><div class="stat-top"><span>MESSAGES SCANNED</span><span class="stat-icon">▤</span></div><strong id="overview-scanned">—</strong><small id="overview-scanned-note">Available after bot integration</small></article>
+            <article class="stat-card"><div class="stat-top"><span>THREATS DETECTED</span><span class="stat-icon red">⌁</span></div><strong id="overview-threats">—</strong><small id="overview-threats-note">Available after bot integration</small></article>
+            <article class="stat-card"><div class="stat-top"><span>MESSAGES REMOVED</span><span class="stat-icon">⌫</span></div><strong id="overview-removed">—</strong><small id="overview-removed-note">Available after bot integration</small></article>
+            <article class="stat-card"><div class="stat-top"><span>ACTIVE TIMEOUTS</span><span class="stat-icon">◷</span></div><strong id="overview-timeouts">—</strong><small id="overview-timeouts-note">Available after bot integration</small></article>
           </div>
           <div class="dashboard-grid">
             <article class="panel activity-panel">
               <div class="panel-heading"><div><h2>Recent activity</h2><p>Latest security events in this server</p></div><a href="#moderation" data-page="moderation">View moderation <span>→</span></a></div>
-              <div class="activity-list">
-                <div class="activity-row"><span class="event-symbol red">!</span><div class="activity-copy"><strong>Suspicious link detected</strong><small>Member: <b>sample_member</b> · #general</small></div><time>8 min ago</time><span class="event-state danger">REMOVED</span></div>
-                <div class="activity-row"><span class="event-symbol amber">⌁</span><div class="activity-copy"><strong>Campaign image flagged</strong><small>Member: <b>another_member</b> · #media</small></div><time>32 min ago</time><span class="event-state warning">REVIEW</span></div>
-                <div class="activity-row"><span class="event-symbol green">✓</span><div class="activity-copy"><strong>Protection scan completed</strong><small>Automated scan · #introductions</small></div><time>1 hr ago</time><span class="event-state success">CLEAR</span></div>
-                <div class="activity-row"><span class="event-symbol red">!</span><div class="activity-copy"><strong>Known scam phrase detected</strong><small>Member: <b>member_204</b> · #chat</small></div><time>3 hr ago</time><span class="event-state danger">REMOVED</span></div>
-              </div>
+              <div class="activity-empty" id="overview-activity-empty"><span>≡</span><strong>No activity data yet</strong><p>Real detections, timeouts and false-positive reports will appear here after bot integration.</p></div>
+              <div class="activity-list" id="overview-activity-list" hidden></div>
             </article>
             <article class="panel status-panel">
-              <div class="panel-heading"><div><h2>Protection status</h2><p>Server configuration summary</p></div><span class="live-dot">●</span></div>
-              <div class="protection-status"><div class="shield-mark">⬡</div><div><strong>All systems ready</strong><small>Preview state · backend not connected</small></div></div>
-              <div class="status-line"><span>Text detection</span><b class="enabled">ENABLED</b></div>
-              <div class="status-line"><span>Image detection</span><b class="enabled">ENABLED</b></div>
-              <div class="status-line"><span>Automatic deletion</span><b class="enabled">ENABLED</b></div>
-              <div class="status-line"><span>Member timeouts</span><b class="enabled">ENABLED</b></div>
+              <div class="panel-heading"><div><h2>Protection status</h2><p>Selected server configuration</p></div><span class="live-dot">●</span></div>
+              <div class="protection-status" id="overview-protection-status"><div class="shield-mark">⬡</div><div><strong>Checking configuration…</strong><small>Loading saved server settings</small></div></div>
+              <div class="status-line"><span>Aegis protection</span><b id="overview-enabled" class="muted-state">UNKNOWN</b></div>
+              <div class="status-line"><span>Default timeout</span><b id="overview-timeout-days" class="muted-state">—</b></div>
+              <div class="status-line"><span>Image confidence threshold</span><b id="overview-threshold" class="muted-state">—</b></div>
+              <div class="status-line"><span>Discord bot connection</span><b class="muted-state">PENDING INTEGRATION</b></div>
               <a class="panel-footer-link" href="#protection" data-page="protection">Configure protection <span>→</span></a>
             </article>
           </div>
           <div class="bottom-grid">
             <article class="panel"><div class="panel-heading"><div><h2>Quick configuration</h2><p>Common server controls</p></div></div><div class="quick-actions"><button data-page-link="messages"><span>▤</span><b>Customize bot messages</b><small>Set server-specific notification text</small><i>→</i></button><button data-page-link="logging"><span>≡</span><b>Configure logging</b><small>Choose where moderation events appear</small><i>→</i></button><button data-page-link="moderation"><span>⚖</span><b>Review moderation</b><small>Inspect recent actions and reports</small><i>→</i></button></div></article>
-            <article class="panel network-panel"><div class="panel-heading"><div><h2>Cross-Server Intelligence</h2><p>Future capability</p></div><span class="future-pill">PLANNED</span></div><div class="network-preview"><span class="network-icon">◎</span><div><strong>Not available yet</strong><p>Shared moderation signals and server opt-in controls are planned for a later release.</p></div></div><div class="status-line"><span>Network participation</span><b class="muted-state">NOT IMPLEMENTED</b></div></article>
+            <article class="panel network-panel"><div class="panel-heading"><div><h2>Cross-Server Intelligence</h2><p>Future capability</p></div><span class="future-pill">PLANNED</span></div><div class="network-preview"><span class="network-icon">◎</span><div><strong>Not available yet</strong><p>Shared moderation signals and optional server participation are not part of this build.</p></div></div><div class="status-line"><span>Network participation</span><b class="muted-state">NOT IMPLEMENTED</b></div></article>
           </div>
         </section>
-
         <section class="page" id="page-messages">
           <div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / MESSAGES</div><h1>Bot messages</h1><p>Customize what Aegis says in this server. These templates are isolated per server.</p></div><span class="server-context"><span class="server-avatar small">N</span> Northstar Community</span></div>
           <div class="notice"><span class="notice-mark">i</span><div><strong>Template editor preview</strong><p>Edits currently stay in this page only. Saving will be connected to the Rust API in a later step.</p></div></div>
