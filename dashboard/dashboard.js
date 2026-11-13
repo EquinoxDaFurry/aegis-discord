@@ -4,7 +4,7 @@ const breadcrumb = document.getElementById("breadcrumb-current");
 const toast = document.getElementById("toast");
 let toastTimer;
 function showToast(message){toast.textContent=message;toast.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove("show"),3400)}
-function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="overview")window.dispatchEvent(new Event("aegis:overview-open"));if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));if(page==="analytics")window.dispatchEvent(new Event("aegis:analytics-open"));if(page==="owner")window.dispatchEvent(new Event("aegis:owner-open"));}
+function navigate(page){if(page==="owner"&&document.body.dataset.isOwner!=="true"){showToast("Owner access required.");page="selector";}const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="overview")window.dispatchEvent(new Event("aegis:overview-open"));if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));if(page==="analytics")window.dispatchEvent(new Event("aegis:analytics-open"));if(page==="owner")window.dispatchEvent(new Event("aegis:owner-open"));}
 navLinks.forEach(link=>link.addEventListener("click",event=>{event.preventDefault();if(link.dataset.page==="owner"&&document.body.dataset.isOwner!=="true"){showToast("Owner access required.");return;}navigate(link.dataset.page)}));
 document.querySelectorAll("[data-page-link]").forEach(button=>button.addEventListener("click",()=>navigate(button.dataset.pageLink)));
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
@@ -34,8 +34,8 @@ navigate("selector");
 
 // Discord account, server selection, and per-server dashboard data.
 (async function dashboardBackend() {
-  const ownerCard = document.querySelector(".owner-card");
-  if (ownerCard) ownerCard.style.display = "none";
+  const ownerEntry = document.getElementById("selector-owner-wrap");
+  if (ownerEntry) ownerEntry.hidden = true;
   document.body.dataset.isOwner = "false";
   let isOwner = false;
   let ownerCases = [];
@@ -909,7 +909,7 @@ navigate("selector");
       signedIn = true;
       isOwner = data.is_owner === true;
       document.body.dataset.isOwner = String(isOwner);
-      if (ownerCard) ownerCard.style.display = isOwner ? "" : "none";
+      if (ownerEntry) ownerEntry.hidden = !isOwner;
       const loading = document.getElementById("selector-loading");
       if (loading) loading.hidden = true;
       renderSelector(data.guilds || []);
