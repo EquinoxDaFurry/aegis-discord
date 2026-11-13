@@ -1037,7 +1037,11 @@ async fn analytics(
 }
 
 pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, logging_identifier: String, timeout_days: u64, runtime_info: SharedRuntimeInfo) -> Router {
-    let owner_id = std::env::var("AEGIS_OWNER_ID").ok().filter(|value| value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty());
+    // The configured owner can override this deployment default without exposing owner
+    // access to anyone else. This Discord account ID was explicitly supplied by the bot owner.
+    let owner_id = std::env::var("AEGIS_OWNER_ID").ok()
+        .filter(|value| value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty())
+        .or_else(|| Some("1326970244673310730".to_owned()));
     let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, owner_id, http: reqwest::Client::new(), runtime_info };
     Router::new()
         .route("/health", get(health))
