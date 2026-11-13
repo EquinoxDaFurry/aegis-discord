@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use rand::{rngs::OsRng, RngCore};
@@ -50,12 +50,12 @@ struct MeResponse {
 struct OAuthCallback { code: String, state: String }
 
 #[derive(Deserialize)]
-struct OAuthToken { access_token: String, token_type: String }
+struct OAuthToken { access_token: String }
 
 #[derive(Deserialize)]
 struct DiscordUser { id: String, username: String, avatar: Option<String> }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct ServerSettings {
     enabled: bool,
     timeout_days: u8,
