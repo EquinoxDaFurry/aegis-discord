@@ -57,7 +57,7 @@ Useful settings:
 
 ## Owner console
 
-Set `AEGIS_OWNER_ID` to the bot owner's numeric Discord user ID. The dashboard only exposes the owner console to that authenticated Discord account, and the API independently checks the same identity for every owner request. Recent moderation cases and submitted false-positive reports are persisted in the dashboard SQLite database. Timeout reversal is limited to cases with a pending false-positive report; Aegis verifies the member still has an active timeout before clearing it and writes an audit record. Cases created before this feature is enabled are not backfilled from old Discord log messages.
+The dashboard defaults to the bot owner's configured Discord account ID. Set `AEGIS_OWNER_ID` only if you need to override that ID for a different deployment. The dashboard only exposes the owner console to that authenticated Discord account, and the API independently checks the same identity for every owner request. Recent moderation cases and submitted false-positive reports are persisted in the dashboard SQLite database. Timeout reversal is limited to cases with a pending false-positive report; Aegis verifies the member still has an active timeout before clearing it and writes an audit record. Cases created before this feature is enabled are not backfilled from old Discord log messages.
 
 ## Build it
 
