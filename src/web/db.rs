@@ -70,6 +70,10 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         source_message_id TEXT NOT NULL, created_at INTEGER NOT NULL,
         PRIMARY KEY(source_guild_id, target_guild_id, member_id, source_message_id)
     )").execute(pool).await?;
+    // Link each network action to its owner-console moderation case.
+    let _ = sqlx::query("ALTER TABLE cross_server_actions ADD COLUMN case_id TEXT").execute(pool).await;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_cross_server_actions_case ON cross_server_actions(case_id)")
+        .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_analytics_hourly_guild_hour ON analytics_hourly(guild_id, hour_start)")
         .execute(pool).await?;
     Ok(())
