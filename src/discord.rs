@@ -628,7 +628,9 @@ impl EventHandler for Handler {
                     let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
                     return;
                 }
-                let already = self.false_positive_submitted.lock().map(|s| s.contains(&log_id)).unwrap_or(false);
+                let already = self.false_positive_submitted.lock().map(|s| s.contains(&log_id)).unwrap_or(false)
+                    || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM false_positive_reports WHERE case_id = ?")
+                        .bind(log_id.to_string()).fetch_one(&self.analytics_db).await.unwrap_or(0) > 0;
                 if already {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
                         .content("⚠️ This detection has already been marked as a false positive.").ephemeral(true);
@@ -726,7 +728,9 @@ impl EventHandler for Handler {
                 let mut id_parts = modal.data.custom_id.trim_start_matches("aegis_fp_modal:").split(':');
                 let Ok(log_id) = id_parts.next().unwrap_or_default().parse::<u64>() else { return; };
                 let is_dm_report = id_parts.next() == Some("dm");
-                let already = self.false_positive_submitted.lock().map(|s| s.contains(&log_id)).unwrap_or(false);
+                let already = self.false_positive_submitted.lock().map(|s| s.contains(&log_id)).unwrap_or(false)
+                    || sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM false_positive_reports WHERE case_id = ?")
+                        .bind(log_id.to_string()).fetch_one(&self.analytics_db).await.unwrap_or(0) > 0;
                 if already {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
                         .content("⚠️ This false positive has already been submitted.").ephemeral(true);
