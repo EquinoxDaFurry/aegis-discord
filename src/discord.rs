@@ -143,7 +143,7 @@ impl Handler {
         best.map(|(confidence, reason)| (reason, flagged, confidence))
     }
 
-    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, images: Vec<(String, Vec<u8>)>, confidence: Option<f64>) {
+    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, images: Vec<(String, Vec<u8>)>) {
         let Some(guild_id) = message.guild_id else { return };
         let channels = match guild_id.channels(&ctx.http).await {
             Ok(channels) => channels,
@@ -194,7 +194,7 @@ impl Handler {
         }
     }
 
-    async fn handle_detection(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, images: Vec<(String, Vec<u8>)>) {
+    async fn handle_detection(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, images: Vec<(String, Vec<u8>)>, confidence: Option<f64>) {
         self.threats_since_heartbeat.fetch_add(1, Ordering::Relaxed);
         let deleted = match message.delete(&ctx.http).await {
             Ok(()) => true,
