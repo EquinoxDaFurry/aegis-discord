@@ -164,7 +164,7 @@ async fn beta_status(
 
     let response = state.http
         .get(format!("https://discord.com/api/v10/guilds/{}/members/{}", guild.id, BETA_BOT_USER_ID))
-        .bearer_auth(&state.bot_token)
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
         .send().await.map_err(|error| {
             tracing::error!(%error, guild_id = %guild.id, "Could not check beta bot membership");
             StatusCode::BAD_GATEWAY
