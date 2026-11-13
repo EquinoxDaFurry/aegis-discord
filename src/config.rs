@@ -44,9 +44,9 @@ impl Config {
             dashboard_bind: env::var("AEGIS_DASHBOARD_BIND").unwrap_or_else(|_| "127.0.0.1:8080".to_owned()),
             dashboard_database_path: env::var_os("AEGIS_DASHBOARD_DATABASE").map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("aegis-dashboard.sqlite3")),
-            dashboard_oauth_client_id: env::var("AEGIS_DISCORD_CLIENT_ID").unwrap_or_default(),
+            dashboard_oauth_client_id: env::var("AEGIS_DISCORD_CLIENT_ID").unwrap_or_else(|_| "1529393411579183235".to_owned()),
             dashboard_oauth_client_secret: env::var("AEGIS_DISCORD_CLIENT_SECRET").unwrap_or_default(),
-            dashboard_oauth_redirect_uri: env::var("AEGIS_DISCORD_REDIRECT_URI").unwrap_or_default(),
+            dashboard_oauth_redirect_uri: env::var("AEGIS_DISCORD_REDIRECT_URI").unwrap_or_else(|_| "https://aegisdashboard.wispbyte.app/auth/callback".to_owned()),
         })
     }
 }
