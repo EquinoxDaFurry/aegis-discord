@@ -615,7 +615,13 @@ impl EventHandler for Handler {
                 } else { component.message.id.get() };
                 if log_id == 0 { return; }
                 let report_owner = self.false_positive_reports.lock().ok()
-                    .and_then(|reports| reports.get(&log_id).map(|data| data.user_id));
+                    .and_then(|reports| reports.get(&log_id).map(|data| data.user_id))
+                    .or_else(|| None);
+                let report_owner = if report_owner.is_some() { report_owner } else {
+                    sqlx::query_scalar::<_, String>("SELECT member_id FROM moderation_cases WHERE case_id = ?")
+                        .bind(log_id.to_string()).fetch_optional(&self.analytics_db).await.ok().flatten()
+                        .and_then(|id| id.parse::<u64>().ok())
+                };
                 if report_owner != Some(component.user.id.get()) {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
                         .content("❌ Only the member involved in this detection can submit this report from their timeout DM.").ephemeral(true);
