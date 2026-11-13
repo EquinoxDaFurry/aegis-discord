@@ -23,11 +23,12 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         guild_id TEXT PRIMARY KEY NOT NULL, config_json TEXT NOT NULL DEFAULT '{}', updated_at INTEGER NOT NULL
     )").execute(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS moderation_cases (
-        case_id TEXT PRIMARY KEY NOT NULL, guild_id TEXT NOT NULL, member_id TEXT NOT NULL,
+        case_id TEXT PRIMARY KEY NOT NULL, guild_id TEXT NOT NULL, guild_name TEXT NOT NULL DEFAULT '', member_id TEXT NOT NULL,
         moderator_id TEXT, reason TEXT NOT NULL, source TEXT NOT NULL, timeout_until INTEGER,
         status TEXT NOT NULL CHECK(status IN ('active', 'expired', 'reversed', 'failed')),
         created_at INTEGER NOT NULL, original_message_url TEXT
     )").execute(pool).await?;
+    let _ = sqlx::query("ALTER TABLE moderation_cases ADD COLUMN guild_name TEXT NOT NULL DEFAULT ''").execute(pool).await;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_moderation_cases_created ON moderation_cases(created_at DESC)")
         .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_moderation_cases_guild ON moderation_cases(guild_id, created_at DESC)")
