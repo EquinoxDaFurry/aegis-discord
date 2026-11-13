@@ -450,7 +450,7 @@ async fn moderation(
             let Some(embeds) = message.get("embeds").and_then(Value::as_array) else { continue; };
             let Some(embed) = embeds.iter().find(|e| e.get("title").and_then(Value::as_str).is_some_and(|t| t.contains("Scam Detected"))) else { continue; };
             let Some(timeout) = embed_field(embed, "Timeout") else { continue; };
-            if !timeout.starts_with("Timed out successfully") { continue; }
+            if !timeout.contains("Timed out successfully") { continue; }
             let Some(user_field) = embed_field(embed, "User") else { continue; };
             let Some(user_id) = user_field.split(char::from(96)).nth(1).map(str::to_owned).or_else(|| extract_id(user_field, "<@")) else { continue; };
             let reason = embed_field(embed, "Reason").unwrap_or("Unknown detection reason").to_owned();
