@@ -756,7 +756,7 @@ navigate("selector");
   setInterval(() => {
     if (!activeGuild) return;
     loadAnalytics();
-    if (document.getElementById("page-overview").classList.contains("active")) loadModeration();
+    if (document.getElementById("page-overview").classList.contains("active") || document.getElementById("page-moderation").classList.contains("active")) loadModeration();
   }, 60000);
 
   document.getElementById("protection-form")?.addEventListener("submit", saveProtectionSettings);
