@@ -37,6 +37,8 @@ navigate("selector");
 // Discord account, server selection, and per-server dashboard data.
 (async function dashboardBackend() {
   const ownerCard = document.querySelector(".owner-card");
+  if (ownerCard) ownerCard.style.display = "none";
+  document.body.dataset.isOwner = "false";
   let isOwner = false;
   let ownerCases = [];
   let activeGuild = null;
