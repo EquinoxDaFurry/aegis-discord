@@ -239,7 +239,7 @@ impl Handler {
             else if configured_title.contains("Scam Detected") { configured_title.to_owned() }
             else { format!("{} · Scam Detected", configured_title) };
         let description = if has_sections {
-            detection_text.lines().nth(1).unwrap_or("Possible scam content detected.").to_owned()
+            detection_text.lines().skip(1).take_while(|line| line.trim() != "User").collect::<Vec<_>>().join("\n").trim().to_owned()
         } else if detection_text.lines().count() > 1 {
             detection_text.lines().skip(1).collect::<Vec<_>>().join("\n")
         } else { detection_text.clone() };
