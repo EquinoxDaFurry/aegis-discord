@@ -143,7 +143,7 @@ fn can_manage(guild: &DiscordGuild) -> bool {
     guild.permissions.parse::<u64>().map(|bits| bits & (0x8 | 0x20) != 0).unwrap_or(false)
 }
 
-async fn runtime_info(State(state): State<AppState>) -> Json<Option<super::RuntimeInfo>> {
+async fn get_runtime_info(State(state): State<AppState>) -> Json<Option<super::RuntimeInfo>> {
     Json(state.runtime_info.read().await.clone())
 }
 
@@ -322,7 +322,7 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/auth/callback", get(oauth_callback))
         .route("/auth/logout", post(logout))
         .route("/api/me", get(me))
-        .route("/api/runtime", get(runtime_info))
+        .route("/api/runtime", get(get_runtime_info))
         .route("/api/guilds/:guild_id/settings", get(get_settings).put(save_settings))
         .nest_service("/", ServeDir::new("dashboard"))
         .with_state(state)
