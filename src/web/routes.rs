@@ -404,6 +404,17 @@ async fn moderation(
     if !channels_response.status().is_success() {
         let status = channels_response.status();
         let body = channels_response.text().await.unwrap_or_default();
+        if status == StatusCode::FORBIDDEN {
+            tracing::warn!(%status, guild_id = %guild.id, response = %body.chars().take(300).collect::<String>(), "Bot cannot access this server's channel list; moderation history will be unavailable");
+            return Ok(Json(ModerationResponse {
+                guild_id,
+                logging_channel_id: configured_channel,
+                lookback_days: 9,
+                truncated: false,
+                warning: Some("Aegis cannot access this server's channels. Make sure the main Aegis bot is in the server and can view the logging channel.".to_owned()),
+                incidents: Vec::new(),
+            }));
+        }
         tracing::error!(%status, guild_id = %guild.id, response = %body.chars().take(300).collect::<String>(), "Discord rejected moderation channel lookup");
         return Err(StatusCode::BAD_GATEWAY);
     }
@@ -425,6 +436,7 @@ async fn moderation(
     let mut before: Option<String> = None;
     let mut raw: Vec<(String,String,String,String,Option<f64>,Option<f64>,Option<String>,bool,bool,i64,Vec<String>)> = Vec::new();
     let mut reached_cutoff = false;
+    let mut history_warning: Option<String> = None;
     for _ in 0..100 {
         let url = format!("https://discord.com/api/v10/channels/{}/messages", log_channel_id);
         let mut request = state.http.get(url).header(header::AUTHORIZATION, format!("Bot {}", state.bot_token));
@@ -437,6 +449,11 @@ async fn moderation(
         })?;
         if !response.status().is_success() {
             let status = response.status(); let body = response.text().await.unwrap_or_default();
+            if status == StatusCode::FORBIDDEN {
+                tracing::warn!(%status, guild_id = %guild.id, channel_id = %log_channel_id, response = %body.chars().take(300).collect::<String>(), "Bot cannot read the configured moderation log channel");
+                history_warning = Some("Aegis can see the logging channel but cannot read its message history. Grant the main bot View Channel and Read Message History permissions.".to_owned());
+                break;
+            }
             tracing::error!(%status, guild_id = %guild.id, channel_id = %log_channel_id, response = %body.chars().take(300).collect::<String>(), "Discord rejected moderation log history request");
             return Err(StatusCode::BAD_GATEWAY);
         }
@@ -506,7 +523,8 @@ async fn moderation(
                     .or_else(|| user.get("avatar").and_then(Value::as_str).map(|hash| format!("https://cdn.discordapp.com/avatars/{}/{}.png?size=64", user_id, hash)));
                 let timeout = member.get("communication_disabled_until").and_then(Value::as_str).map(str::to_owned);
                 member_cache.insert(user_id.clone(), (username, avatar, timeout, true));
-            } else if response.status() == StatusCode::NOT_FOUND {
+            } else if response.status() == StatusCode::NOT_FOUND || response.status() == StatusCode::FORBIDDEN {
+                // A member may be unavailable to the bot; keep the history usable with their ID as a fallback.
                 member_cache.insert(user_id.clone(), (user_id.clone(), None, None, false));
             } else {
                 let status = response.status(); let body = response.text().await.unwrap_or_default();
@@ -526,7 +544,7 @@ async fn moderation(
     }
     incidents.sort_by(|a,b| b.created_at.cmp(&a.created_at));
     Ok(Json(ModerationResponse { guild_id, logging_channel_id: Some(log_channel_id), lookback_days: 9,
-        truncated, warning: None, incidents }))
+        truncated, warning: history_warning, incidents }))
 }
 
 
