@@ -55,7 +55,7 @@ navigate("selector");
   }
   function formatTimeoutUntil(value) {
     if (!value) return "Unknown";
-    const date = /^\\d+$/.test(value) ? new Date(Number(value) * 1000) : new Date(value);
+    const date = /^\d+$/.test(value) ? new Date(Number(value) * 1000) : new Date(value);
     return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
   }
   function statusLabel(status) {
