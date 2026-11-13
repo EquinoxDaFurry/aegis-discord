@@ -54,7 +54,12 @@ navigate("selector");
     const saved = settings?.message_templates || {};
     for (const key of Object.keys(templates)) {
       if (saved[key]) {
-        templates[key].content = typeof saved[key].content === "string" ? saved[key].content : templates[key].content;
+        const savedContent = typeof saved[key].content === "string" ? saved[key].content : "";
+        const isLegacyDefaultTimeout = key === "timeout"
+          && savedContent.includes("{report_server}")
+          && savedContent.includes("If this was a mistake:")
+          && savedContent.includes("Please include:");
+        templates[key].content = isLegacyDefaultTimeout ? defaultTemplates.timeout.content : (savedContent || templates[key].content);
         templates[key].enabled = saved[key].enabled !== false;
       }
     }
