@@ -136,6 +136,8 @@ Flagged Content:
 ```
 
 
+If this was wrong, please click the button below.
+
 -# Anti-Scam Protection System"#.to_owned() }),
         ("detection".to_owned(), MessageTemplate { enabled: true, content: r#"🚨 Scam Detected
 Possible scam content detected.
