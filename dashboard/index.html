@@ -136,20 +136,22 @@ If you believe this is a mistake, please submit a false-positive report so the s
         </section>
 
         <section class="page" id="page-owner">
-          <div class="page-heading"><div><div class="eyebrow">GLOBAL CONTROLS / OWNER CONSOLE</div><h1>Owner console</h1><p>Bot-wide moderation oversight and false-positive review.</p></div><span class="owner-only-chip">♛ OWNER ONLY · PREVIEW</span></div>
-          <div class="notice warning-notice"><span class="notice-mark">!</span><div><strong>Owner actions are not connected yet</strong><p>This panel uses sample cases. Reversal controls will call Discord through the Rust backend once implemented.</p></div></div>
-          <div class="stat-grid owner-stats"><article class="stat-card"><div class="stat-top"><span>RECENT TIMEOUTS</span><span class="stat-icon">◷</span></div><strong>24</strong><small><span>Across all servers · sample</span></small></article><article class="stat-card"><div class="stat-top"><span>FALSE-POSITIVE REPORTS</span><span class="stat-icon amber">⚑</span></div><strong>5</strong><small><span>Awaiting owner review · sample</span></small></article><article class="stat-card"><div class="stat-top"><span>REVERSED ACTIONS</span><span class="stat-icon">↶</span></div><strong>3</strong><small><span>Recorded reversals · sample</span></small></article><article class="stat-card"><div class="stat-top"><span>ACTIVE CASES</span><span class="stat-icon red">!</span></div><strong>8</strong><small><span>Not yet reviewed · sample</span></small></article></div>
-          <article class="panel owner-table-panel"><div class="panel-heading"><div><h2>Recent timeout actions</h2><p>Cross-server moderation timeline</p></div><div class="table-tools"><input id="case-search" type="search" placeholder="Search member or server…"><select id="case-filter" aria-label="Filter cases"><option value="all">All cases</option><option value="active">Active</option><option value="reported">Reported</option><option value="reversed">Reversed</option></select></div></div>
-            <div class="table-scroll"><table><thead><tr><th>MEMBER / SERVER</th><th>REASON</th><th>TIMEOUT</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="case-rows">
-              <tr data-status="reported" data-search="sample member northstar community suspicious campaign link"><td><b>sample_member</b><small>Northstar Community · 1029384756</small></td><td>Suspicious campaign link</td><td>7 days</td><td><span class="table-status reported">REPORT RECEIVED</span></td><td><button class="text-action" data-case-action="1">Review case</button></td></tr>
-              <tr data-status="active" data-search="member 204 quiet corner known scam phrase"><td><b>member_204</b><small>Quiet Corner · 2039485761</small></td><td>Known scam phrase</td><td>3 days</td><td><span class="table-status active">ACTIVE</span></td><td><button class="text-action" data-case-action="2">View details</button></td></tr>
-              <tr data-status="reversed" data-search="another member northstar community image false positive"><td><b>another_member</b><small>Northstar Community · 1029384756</small></td><td>Image campaign match</td><td>7 days</td><td><span class="table-status reversed">REVERSED</span></td><td><span class="muted-cell">Already reversed</span></td></tr>
-              <tr data-status="active" data-search="member 891 night shift suspicious url"><td><b>member_891</b><small>Night Shift · 3094857612</small></td><td>Suspicious URL pattern</td><td>1 day</td><td><span class="table-status active">ACTIVE</span></td><td><button class="text-action" data-case-action="4">View details</button></td></tr>
-            </tbody></table></div>
-            <div class="table-foot"><span>Showing sample cases · not live Discord data</span><span>Reversals will be audited</span></div>
-          </article>
-          <div class="owner-safety"><span>⬡</span><div><strong>Reversal safety checks</strong><p>The live implementation will verify the original action, confirm the timeout is still active, prevent duplicate reversals, and record the owner ID, timestamp, and reason.</p></div></div>
-        </section>
+  <div class="page-heading"><div><div class="eyebrow">GLOBAL CONTROLS / OWNER CONSOLE</div><h1>Owner console</h1><p>Review Aegis timeouts and false-positive reports across every server.</p></div><span class="owner-only-chip" id="owner-account-chip">OWNER ACCESS</span></div>
+  <div class="notice warning-notice" id="owner-warning" hidden><span class="notice-mark">!</span><div><strong>Owner console unavailable</strong><p id="owner-warning-text"></p></div></div>
+  <div class="stat-grid owner-stats">
+    <article class="stat-card"><div class="stat-top"><span>RECENT TIMEOUTS</span><span class="stat-icon">◷</span></div><strong id="owner-total">—</strong><small>Persisted Aegis cases</small></article>
+    <article class="stat-card"><div class="stat-top"><span>PENDING REPORTS</span><span class="stat-icon amber">⚑</span></div><strong id="owner-reports">—</strong><small>Awaiting owner review</small></article>
+    <article class="stat-card"><div class="stat-top"><span>REVERSED ACTIONS</span><span class="stat-icon">↶</span></div><strong id="owner-reversed">—</strong><small>Recorded reversals</small></article>
+    <article class="stat-card"><div class="stat-top"><span>ACTIVE TIMEOUTS</span><span class="stat-icon red">!</span></div><strong id="owner-active">—</strong><small>Before recorded expiry</small></article>
+  </div>
+  <article class="panel owner-table-panel">
+    <div class="panel-heading"><div><h2>Recent timeout actions</h2><p>New cases are recorded from the bot's successful moderation events.</p></div><div class="table-tools"><input id="owner-case-search" type="search" placeholder="Search member or server…" aria-label="Search owner cases"><select id="owner-case-filter" aria-label="Filter owner cases"><option value="all">All cases</option><option value="reported">False-positive reports</option><option value="active">Active</option><option value="reversed">Reversed</option><option value="expired">Expired</option></select><button class="button button-secondary" id="owner-refresh" type="button">↻ Refresh</button></div></div>
+    <div class="table-scroll"><table><thead><tr><th>MEMBER / SERVER</th><th>REASON</th><th>TIMEOUT UNTIL</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="owner-case-rows"><tr><td colspan="5" class="muted-cell">Loading owner cases…</td></tr></tbody></table></div>
+    <div class="table-foot"><span id="owner-case-count">Loading…</span><span>Owner actions are audited</span></div>
+  </article>
+  <article class="panel moderation-detail" id="owner-case-detail" hidden><div class="panel-heading"><div><h2>Case details</h2><p id="owner-detail-subtitle">Selected moderation case</p></div><button class="button button-secondary" id="owner-detail-close" type="button">Close</button></div><div id="owner-detail-content"></div></article>
+  <div class="owner-safety"><span>⬡</span><div><strong>Reversal safeguards</strong><p>Only cases with a submitted false-positive report can be reversed. Aegis checks that the timeout is still active, prevents repeat reversals, and records the owner, reason, and timestamp.</p></div></div>
+</section>
 
         <section class="page" id="page-moderation">
           <div class="page-heading">
