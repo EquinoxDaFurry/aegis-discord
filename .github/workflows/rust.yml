@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - rewrite/rust-aegis-v2
+      - beta
   pull_request:
     paths:
       - "src/**"
