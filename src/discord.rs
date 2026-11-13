@@ -211,7 +211,7 @@ impl Handler {
         let Some(guild_id) = message.guild_id else { return None };
         let channels = match guild_id.channels(&ctx.http).await {
             Ok(channels) => channels,
-            Err(error) => { warn!(%error, "Could not inspect server channels for Aegis logging channel"); return; }
+            Err(error) => { warn!(%error, "Could not inspect server channels for Aegis logging channel"); return None; }
         };
         let configured = settings.get("logging_channel_id").and_then(serde_json::Value::as_str)
             .and_then(|id| id.parse::<u64>().ok())
