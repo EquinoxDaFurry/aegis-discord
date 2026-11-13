@@ -102,7 +102,7 @@ navigate("selector");
     return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
   }
   function statusLabel(status) {
-    return ({active:"ACTIVE",expired:"EXPIRED",ended_early:"ENDED EARLY",unknown:"UNVERIFIED"})[status] || "UNKNOWN";
+    return ({active:"ACTIVE",expired:"EXPIRED",ended_early:"ENDED EARLY",not_applied:"TIMEOUT NOT APPLIED",unknown:"UNVERIFIED"})[status] || "UNKNOWN";
   }
   function statusClass(status) {
     return status === "active" ? "active" : status === "expired" ? "expired" : status === "ended_early" ? "ended" : "unknown";
@@ -227,7 +227,7 @@ navigate("selector");
             const title = document.createElement("strong");
             title.textContent = "Scam detection · " + item.username;
             const detail = document.createElement("small");
-            detail.textContent = item.status === "active" ? "Timeout active" : item.status === "ended_early" ? "Timeout ended early" : item.status === "expired" ? "Timeout expired" : "Timeout status unavailable";
+            detail.textContent = item.status === "not_applied" ? "Detection logged · timeout not applied" : item.status === "active" ? "Timeout active" : item.status === "ended_early" ? "Timeout ended early" : item.status === "expired" ? "Timeout expired" : "Timeout status unavailable";
             copy.append(title, detail);
             const time = document.createElement("time");
             time.textContent = formatDate(item.created_at);
