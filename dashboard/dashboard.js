@@ -557,11 +557,103 @@ navigate("selector");
     }
   }
 
+  async function loadCrossServerActions() {
+    if (!isOwner) return;
+    const tbody = document.getElementById("owner-network-rows");
+    if (!tbody) return;
+    tbody.replaceChildren(Object.assign(document.createElement("tr"), {
+      innerHTML: '<td colspan="6" class="muted-cell">Loading cross-server actions…</td>'
+    }));
+    try {
+      const data = await api("/api/owner/cross-server-actions");
+      const actions = data.actions || [];
+      if (!actions.length) {
+        tbody.replaceChildren(Object.assign(document.createElement("tr"), {
+          innerHTML: '<td colspan="6" class="muted-cell">No linked cross-server actions yet. New network timeouts will appear here.</td>'
+        }));
+      } else {
+        tbody.replaceChildren(...actions.map(item => {
+          const row = document.createElement("tr");
+          const member = document.createElement("td");
+          const memberName = document.createElement("b");
+          memberName.textContent = "Member " + item.member_id;
+          const target = document.createElement("small");
+          target.textContent = (item.target_guild_name || "Target server") + " · " + item.target_guild_id;
+          member.append(memberName, target);
+          const source = document.createElement("td");
+          source.textContent = item.source_guild_id;
+          const detected = document.createElement("td");
+          detected.textContent = item.created_at ? new Date(item.created_at * 1000).toLocaleString() : "—";
+          const expiry = document.createElement("td");
+          expiry.textContent = item.timeout_until ? new Date(item.timeout_until * 1000).toLocaleString() : "—";
+          const status = document.createElement("td");
+          const chip = document.createElement("span");
+          const labels = {active:["ACTIVE","active"],expired:["EXPIRED","expired"],reversed:["REVERSED","reversed"],failed:["FAILED","unknown"]};
+          const [label, cls] = labels[item.status] || ["UNKNOWN","unknown"];
+          chip.className = "table-status " + cls;
+          chip.textContent = label;
+          status.appendChild(chip);
+          const actionsCell = document.createElement("td");
+          const details = document.createElement("button");
+          details.type = "button";
+          details.className = "text-action";
+          details.textContent = "Details";
+          details.addEventListener("click", () => showOwnerCase({
+            case_id:item.case_id, member_id:item.member_id, guild_id:item.target_guild_id,
+            guild_name:item.target_guild_name, reason:item.reason, status:item.status,
+            timeout_until:item.timeout_until, created_at:item.created_at,
+            original_message_url:item.original_message_url
+          }));
+          actionsCell.appendChild(details);
+          if (item.status === "active") {
+            const reverse = document.createElement("button");
+            reverse.type = "button";
+            reverse.className = "text-action owner-reverse-action";
+            reverse.textContent = "Reverse timeout";
+            reverse.addEventListener("click", async () => {
+              const reasonText = window.prompt("Reason for reversing this cross-server timeout (5–500 characters):", "Confirmed cross-server false positive");
+              if (reasonText === null) return;
+              try {
+                await api("/api/owner/cases/" + encodeURIComponent(item.case_id) + "/reverse", {
+                  method:"POST", body:JSON.stringify({reason:reasonText})
+                });
+                showToast("Cross-server timeout reversed and audited.");
+              } catch (error) {
+                showToast("Could not reverse network timeout: " + error.message);
+              }
+              await loadOwnerCases();
+              await loadCrossServerActions();
+            });
+            actionsCell.appendChild(reverse);
+          } else if (item.status === "reversed") {
+            const done = document.createElement("span");
+            done.className = "muted-cell";
+            done.textContent = "Already reversed";
+            actionsCell.appendChild(done);
+          }
+          row.append(member, source, detected, expiry, status, actionsCell);
+          return row;
+        }));
+      }
+      const count = document.getElementById("owner-network-count");
+      if (count) count.textContent = actions.length + " cross-server actions";
+    } catch (error) {
+      tbody.replaceChildren(Object.assign(document.createElement("tr"), {
+        innerHTML: '<td colspan="6" class="muted-cell"></td>'
+      }));
+      const cell = tbody.querySelector("td");
+      if (cell) cell.textContent = "Could not load cross-server actions: " + error.message;
+      const count = document.getElementById("owner-network-count");
+      if (count) count.textContent = "Unavailable";
+    }
+  }
+
   document.getElementById("owner-case-search")?.addEventListener("input", filterOwnerCases);
   document.getElementById("owner-case-filter")?.addEventListener("change", filterOwnerCases);
   document.getElementById("owner-refresh")?.addEventListener("click", loadOwnerCases);
+  document.getElementById("owner-network-refresh")?.addEventListener("click", loadCrossServerActions);
   document.getElementById("owner-detail-close")?.addEventListener("click", () => { document.getElementById("owner-case-detail").hidden = true; });
-  window.addEventListener("aegis:owner-open", loadOwnerCases);
+  window.addEventListener("aegis:owner-open", () => { loadOwnerCases(); loadCrossServerActions(); });
 
   function initials(name) {
     return (name || "?").trim().split(/\s+/).filter(Boolean).map(word => Array.from(word)[0]).join("").toUpperCase() || "?";
@@ -875,6 +967,14 @@ navigate("selector");
     enabledLabel.className = enabled ? "enabled" : "muted-state";
     document.getElementById("overview-timeout-days").textContent = currentSettings ? currentSettings.timeout_days + " DAYS" : "—";
     document.getElementById("overview-threshold").textContent = currentSettings ? (Number(currentSettings.delete_threshold) * 100).toFixed(1) + "%" : "—";
+    const networkEnabled = currentSettings?.cross_server_intelligence !== false;
+    const networkState = document.getElementById("overview-network-state");
+    const networkValue = document.getElementById("overview-network-value");
+    if (networkState) networkState.textContent = currentSettings ? (networkEnabled ? "Participating in the network" : "Opted out of the network") : "Network setting unavailable";
+    if (networkValue) {
+      networkValue.textContent = currentSettings ? (networkEnabled ? "ENABLED" : "OPTED OUT") : "UNKNOWN";
+      networkValue.className = networkEnabled ? "enabled" : "muted-state";
+    }
     document.getElementById("overview-data-notice").hidden = true;
   }
 
