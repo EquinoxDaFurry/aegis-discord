@@ -54,7 +54,7 @@ navigate("selector");
   }
 
   function initials(name) {
-    return (name || "?").trim().split(/\\s+/).filter(Boolean).map(word => Array.from(word)[0]).join("").toUpperCase() || "?";
+    return (name || "?").trim().split(/\s+/).filter(Boolean).map(word => Array.from(word)[0]).join("").toUpperCase() || "?";
   }
 
   function serverIcon(guild, muted = false) {
@@ -232,15 +232,6 @@ navigate("selector");
     } else avatar.textContent = initials(guild.name);
     document.getElementById("sidebar-server-name").textContent = guild.name;
     document.querySelector(".server-meta small").textContent = "Selected server";
-    document.querySelector(".server-meta strong").textContent = guild.name;
-    document.querySelector(".server-meta").previousElementSibling.replaceChildren();
-    const sideImg = guild.icon ? document.createElement("img") : null;
-    if (sideImg) {
-      sideImg.src = "https://cdn.discordapp.com/icons/" + encodeURIComponent(guild.id) + "/" + encodeURIComponent(guild.icon) + ".png?size=64";
-      sideImg.alt = "";
-      sideImg.addEventListener("error", () => { avatar.textContent = initials(guild.name); }, { once: true });
-      avatar.replaceChildren(sideImg);
-    } else avatar.textContent = initials(guild.name);
     const context = document.querySelector(".server-context");
     if (context) context.textContent = guild.name;
     document.querySelector(".connection").innerHTML = "<i></i> DISCORD CONNECTED";
