@@ -29,9 +29,9 @@ async fn main() -> Result<()> {
         .event_handler(handler).await.context("creating Discord client")?;
     info!("Starting Aegis 2.0 (Rust)");
     let dashboard_bind = config.dashboard_bind.clone();
-    let dashboard_database = config.dashboard_database_path.clone();
+    let dashboard_database = config.dashboard_database_path.clone();\n    let oauth_client_id = config.dashboard_oauth_client_id.clone();\n    let oauth_client_secret = config.dashboard_oauth_client_secret.clone();\n    let oauth_redirect_uri = config.dashboard_oauth_redirect_uri.clone();
     let mut dashboard_task = tokio::spawn(async move {
-        web::run(dashboard_bind, dashboard_database).await
+        web::run(dashboard_bind, dashboard_database, oauth_client_id, oauth_client_secret, oauth_redirect_uri).await
     });
     tokio::select! {
         result = client.start() => {
