@@ -24,7 +24,9 @@ async fn main() -> Result<()> {
     let text_detector = Arc::new(TextDetector::from_rules(&rules)?);
     let image_detector = Arc::new(ImageDetector::from_rules(&rules, config.image_cache_entries, config.delete_threshold));
     let runtime_info: web::SharedRuntimeInfo = Arc::new(RwLock::new(None));
-    let handler = discord::Handler::new(config.clone(), text_detector, image_detector, runtime_info.clone());
+    let analytics_db = web::connect_dashboard_database(&config.dashboard_database_path).await
+        .context("opening dashboard analytics database")?;
+    let handler = discord::Handler::new(config.clone(), text_detector, image_detector, runtime_info.clone(), analytics_db);
     let intents = GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT | GatewayIntents::GUILD_MEMBERS;
     let mut client = Client::builder(&config.discord_token, intents)
