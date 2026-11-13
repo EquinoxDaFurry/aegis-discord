@@ -159,3 +159,12 @@ button.server-card:hover{background:#12161b;border-color:#69404a}
 @media(max-width:600px){.analytics-toolbar{align-items:flex-start;flex-direction:column}.analytics-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-chart-panel{padding:14px 10px}.analytics-chart-heading{padding:0 5px}.analytics-axis-label{font-size:9px}}
 
 .owner-reverse-action{margin-left:7px}.table-status.expired{background:rgba(133,137,144,.1);color:#9da1a8;border-color:#3b3e44}.moderation-detail-row{padding:9px 0;border-bottom:1px solid var(--border)}.moderation-detail-row strong{display:block;color:var(--muted);font-family:var(--display);font-size:8px;letter-spacing:.8px}.moderation-detail-row p{margin:5px 0 0;color:var(--text);font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}#owner-detail-content>a{display:inline-block;margin-top:12px;color:#e9a2ac;font-size:10px}
+
+/* Original detection attachments shown in the moderation detail view. */
+.moderation-images{margin-top:10px;padding:13px;background:#101216;border:1px solid var(--border);border-radius:5px}
+.moderation-images>small{display:block;margin-bottom:9px;color:var(--muted);font-family:var(--display);font-size:7px;letter-spacing:.8px}
+.moderation-image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
+.moderation-image-link{display:block;overflow:hidden;border:1px solid #30343b;border-radius:5px;background:#090a0d}
+.moderation-image-link img{display:block;width:100%;max-height:360px;object-fit:contain}
+.moderation-image-link:hover{border-color:#7b3541}
+@media(max-width:430px){.moderation-image-grid{grid-template-columns:1fr}}
