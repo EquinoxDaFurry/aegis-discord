@@ -187,6 +187,8 @@ navigate("selector");
     const detail = document.getElementById("moderation-detail");
     if (detail) detail.hidden = true;
     if (rows) rows.innerHTML = '<tr><td colspan="6" class="muted-cell">Loading moderation history from Discord…</td></tr>';
+    const overviewTimeoutStat = document.getElementById("overview-timeouts");
+    if (overviewTimeoutStat) overviewTimeoutStat.textContent = "…";
     if (warning) warning.hidden = true;
     try {
       const data = await api("/api/guilds/" + encodeURIComponent(guildId) + "/moderation");
@@ -249,6 +251,7 @@ navigate("selector");
       document.getElementById("moderation-warning-title").textContent = "Could not load moderation history";
       document.getElementById("moderation-warning-text").textContent = error.message + ". Check that Aegis can view the logging channel and read its message history.";
       ["moderation-total","moderation-active","moderation-expired","moderation-ended"].forEach(id => document.getElementById(id).textContent = "—");
+      if (overviewTimeoutStat) overviewTimeoutStat.textContent = "—";
     }
   }
   window.addEventListener("aegis:overview-open", () => { loadAnalytics(); loadModeration(); });
@@ -324,6 +327,7 @@ navigate("selector");
     const warning = document.getElementById("analytics-warning");
     if (warning) warning.hidden = true;
     document.getElementById("analytics-messages").textContent = "…";
+    ["overview-scanned","overview-threats","overview-removed"].forEach(id => { const node=document.getElementById(id); if(node) node.textContent="…"; });
     try {
       const data = await api("/api/guilds/" + encodeURIComponent(guildId) + "/analytics?range=" + analyticsRange);
       if (requestId !== analyticsRequest || activeGuild?.id !== guildId) return;
@@ -363,6 +367,7 @@ navigate("selector");
       warning.hidden = false;
       warning.textContent = "Could not load analytics: " + error.message + ". Make sure the beta bot is online and has access to its analytics database.";
       ["analytics-messages","analytics-scams","analytics-confidence","analytics-deleted","analytics-timeouts"].forEach(id=>document.getElementById(id).textContent="—");
+      ["overview-scanned","overview-threats","overview-removed"].forEach(id => { const node=document.getElementById(id); if(node) node.textContent="—"; });
     }
   }
 
