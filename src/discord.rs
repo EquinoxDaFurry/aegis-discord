@@ -622,7 +622,7 @@ impl EventHandler for Handler {
                         .bind(log_id.to_string()).fetch_optional(&self.analytics_db).await.ok().flatten()
                         .and_then(|id| id.parse::<u64>().ok())
                 };
-                if report_owner != Some(component.user.id.get()) {
+                if component.data.custom_id.starts_with("aegis_fp_dm:") && report_owner != Some(component.user.id.get()) {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
                         .content("❌ Only the member involved in this detection can submit this report from their timeout DM.").ephemeral(true);
                     let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
