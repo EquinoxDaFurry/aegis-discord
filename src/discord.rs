@@ -372,9 +372,12 @@ impl Handler {
             let Some(channel) = channel else {
                 warn!(target_guild_id = %target_guild_id, "No logging channel found for cross-server action"); continue;
             };
-            let target_name = target_guild.as_ref().map(|guild| guild.name.clone())
-                .or_else(|| None).unwrap_or_else(|| "Unknown server".to_owned());
-            let safe_flagged = flagged_content.chars().take(1200).collect::<String>();
+            let target_name = match target_guild.as_ref() {
+                Some(guild) => guild.name.clone(),
+                None => target_guild_id.to_partial_guild(&ctx.http).await
+                    .map(|guild| guild.name).unwrap_or_else(|_| "Unknown server".to_owned()),
+            };
+            let safe_flagged = flagged_content.chars().take(1200).collect::<String>().replace("```", "'''");
             let embed = CreateEmbed::new().title("Cross Server Intelligence Network")
                 .description(format!("Aegis detected a threat in {} and applied a network action in {}.", source_guild_name, target_name))
                 .timestamp(Timestamp::now()).color(0xED4245)
