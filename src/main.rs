@@ -7,6 +7,7 @@ use config::Config;
 use detection::{image::ImageDetector, text::TextDetector, RuleDatabase};
 use serenity::{all::GatewayIntents, Client};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::info;
 
 #[tokio::main]
@@ -22,7 +23,8 @@ async fn main() -> Result<()> {
     info!("Loaded {} text rules and {} image hashes", rules.text_rule_count(), rules.image_hash_count());
     let text_detector = Arc::new(TextDetector::from_rules(&rules)?);
     let image_detector = Arc::new(ImageDetector::from_rules(&rules, config.image_cache_entries, config.delete_threshold));
-    let handler = discord::Handler::new(config.clone(), text_detector, image_detector);
+    let runtime_info: web::SharedRuntimeInfo = Arc::new(RwLock::new(None));
+    let handler = discord::Handler::new(config.clone(), text_detector, image_detector, runtime_info.clone());
     let intents = GatewayIntents::GUILDS | GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT | GatewayIntents::GUILD_MEMBERS;
     let mut client = Client::builder(&config.discord_token, intents)
@@ -34,7 +36,7 @@ async fn main() -> Result<()> {
     let oauth_client_secret = config.dashboard_oauth_client_secret.clone();
     let oauth_redirect_uri = config.dashboard_oauth_redirect_uri.clone();
     let mut dashboard_task = tokio::spawn(async move {
-        web::run(dashboard_bind, dashboard_database, oauth_client_id, oauth_client_secret, oauth_redirect_uri).await
+        web::run(dashboard_bind, dashboard_database, oauth_client_id, oauth_client_secret, oauth_redirect_uri, runtime_info).await
     });
     tokio::select! {
         result = client.start() => {
