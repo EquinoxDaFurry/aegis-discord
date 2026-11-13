@@ -223,7 +223,30 @@ If you believe this is a mistake, please submit a false-positive report so the s
           <p class="protection-disclaimer">Settings are saved separately for each server. They will be applied to live Discord moderation during the later bot integration.</p>
         </section>
                 <section class="page" id="page-logging"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose where Aegis sends moderation and security events.</p></div></div><div class="panel placeholder-panel"><span>≡</span><h2>Logging configuration</h2><p>Channel selection and event categories will be connected to the bot configuration API.</p></div></section>
-        <section class="page" id="page-analytics"><div class="page-heading"><div><div class="eyebrow">SERVER INSIGHTS / ANALYTICS</div><h1>Analytics</h1><p>Understand detection volume and moderation trends.</p></div></div><div class="panel placeholder-panel"><span>▥</span><h2>Server analytics</h2><p>Charts and historical statistics will appear here once event storage is implemented.</p></div></section>
+        <section class="page" id="page-analytics">
+          <div class="page-heading"><div><div class="eyebrow">SERVER INSIGHTS / ANALYTICS</div><h1>Analytics</h1><p>Message activity, scam detections, and moderation trends for this server.</p></div><button class="button button-secondary" id="analytics-refresh" type="button">↻ Refresh</button></div>
+          <div class="analytics-toolbar">
+            <div class="analytics-range" role="group" aria-label="Analytics time range">
+              <button type="button" data-analytics-range="day">Day</button><button type="button" data-analytics-range="week" class="selected">Week</button><button type="button" data-analytics-range="month">Month</button>
+            </div>
+            <div class="analytics-chart-style" role="group" aria-label="Graph style">
+              <button type="button" data-analytics-style="line" class="selected">Line</button><button type="button" data-analytics-style="bar">Bar</button>
+            </div>
+          </div>
+          <div class="analytics-stats">
+            <article class="analytics-stat"><span>MESSAGES</span><strong id="analytics-messages">—</strong><small>All server messages</small></article>
+            <article class="analytics-stat"><span>SCAM DETECTIONS</span><strong id="analytics-scams">—</strong><small>Every detection</small></article>
+            <article class="analytics-stat"><span>AVG. CONFIDENCE</span><strong id="analytics-confidence">—</strong><small>Image detections with a score</small></article>
+            <article class="analytics-stat"><span>MESSAGES DELETED</span><strong id="analytics-deleted">—</strong><small>Successful deletions</small></article>
+            <article class="analytics-stat"><span>SUCCESSFUL TIMEOUTS</span><strong id="analytics-timeouts">—</strong><small>Applied by Aegis</small></article>
+          </div>
+          <div class="analytics-charts">
+            <article class="panel analytics-chart-panel"><div class="analytics-chart-heading"><div><h2>Message frequency</h2><p>Every message received in this server</p></div><span id="analytics-message-period">LAST 7 DAYS</span></div><div class="analytics-chart" id="analytics-message-chart"><div class="analytics-chart-empty">Waiting for analytics data…</div></div></article>
+            <article class="panel analytics-chart-panel"><div class="analytics-chart-heading"><div><h2>Scam frequency</h2><p>Every scam detection, whether or not action was taken</p></div><span id="analytics-scam-period">LAST 7 DAYS</span></div><div class="analytics-chart" id="analytics-scam-chart"><div class="analytics-chart-empty">Waiting for analytics data…</div></div></article>
+          </div>
+          <p class="analytics-footnote" id="analytics-footnote">Analytics counts begin when tracking is enabled. No message content is stored for these statistics. Times are shown in UTC.</p>
+          <div class="analytics-warning" id="analytics-warning" role="status" hidden></div>
+        </section>
                 <section class="page" id="page-account"><div class="page-heading"><div><div class="eyebrow">PERSONAL PREFERENCES / ACCOUNT</div><h1>My account</h1><p>Your dashboard preferences and connected Discord identity.</p></div></div><div class="panel placeholder-panel"><span>◉</span><h2>Account settings</h2><p>Discord OAuth sign-in, session management, and personal preferences will be implemented with the Rust backend.</p></div></section>
         <footer class="app-footer"><span>AEGIS OXIDE <b>CONTROL PANEL</b></span><span>INDEPENDENT DASHBOARD · MAIN WEBSITE UNCHANGED</span></footer>
       </div>
