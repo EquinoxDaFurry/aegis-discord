@@ -47,7 +47,7 @@ navigate("selector");
   let betaStatusRequest = 0;
   let moderationData = [];
   let moderationRequest = 0;
-  const settingsPage = document.getElementById("page-settings");
+  const loggingPage = document.getElementById("page-logging");
 
   function formatDate(value) {
     const date = new Date(Number(value) * 1000);
@@ -267,26 +267,10 @@ navigate("selector");
     }
   }
 
-  function settingsForm() {
-    settingsPage.innerHTML = `
-      <div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / SETTINGS</div><h1>Server settings</h1><p>Settings are saved separately for each Discord server.</p></div></div>
-      <div class="panel" style="padding:24px;max-width:760px">
-        <div id="settings-server-name" style="font-weight:700;margin-bottom:22px"></div>
-        <form id="live-settings-form">
-          <label class="field-label" style="display:block;margin-bottom:8px"><input id="setting-enabled" type="checkbox" checked> Enable Aegis for this server</label>
-          <div style="margin-top:22px"><label class="field-label" for="setting-timeout">DEFAULT TIMEOUT DURATION (DAYS)</label>
-            <input id="setting-timeout" type="number" min="1" max="7" step="1" value="7" style="display:block;width:100%;max-width:220px;padding:12px;background:#0d0f12;color:#f3f3f3;border:1px solid #25282d;border-radius:5px"></div>
-          <div style="margin-top:22px"><label class="field-label" for="setting-threshold">IMAGE MATCH CONFIDENCE THRESHOLD</label>
-            <input id="setting-threshold" type="number" min="0.5" max="1" step="0.005" value="0.805" style="display:block;width:100%;max-width:220px;padding:12px;background:#0d0f12;color:#f3f3f3;border:1px solid #25282d;border-radius:5px"></div>
-          <div style="margin-top:22px"><label class="field-label" for="setting-log-channel">LOGGING CHANNEL ID (OPTIONAL)</label>
-            <input id="setting-log-channel" type="text" placeholder="e.g. 123456789012345678" style="display:block;width:100%;max-width:420px;padding:12px;background:#0d0f12;color:#f3f3f3;border:1px solid #25282d;border-radius:5px"></div>
-          <div style="display:flex;align-items:center;gap:16px;margin-top:26px"><button class="button button-primary" type="submit">Save server settings →</button><span id="live-settings-status" aria-live="polite"></span></div>
-        </form>
-      </div>
-      <p style="color:#858990;font-size:12px;margin-top:14px">These settings are stored by the dashboard backend. Applying them to live moderation behavior is part of the later bot integration.</p>`;
+  function loggingForm() {
+    loggingPage.innerHTML = '<div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose the single Discord channel Aegis uses for moderation and security logs.</p></div></div><div class="panel logging-config-panel"><div class="logging-config-icon">≡</div><div class="logging-config-copy"><h2>Logging channel</h2><p>Select one text channel in this server. Aegis will use it for moderation history and security logs.</p></div><form id="live-settings-form" class="logging-config-form"><label class="field-label" for="setting-log-channel">DISCORD CHANNEL</label><select id="setting-log-channel" class="logging-channel-select" required><option value="">Loading channels…</option></select><div class="logging-config-footer"><span id="live-settings-status" role="status" aria-live="polite">Loading server settings…</span><button class="button button-primary" type="submit">Save logging channel →</button></div></form></div><p class="logging-disclaimer">The selected channel is saved separately for this server. If no channel is selected, Aegis continues discovering the logging channel using its existing logging identifier.</p>';
     document.getElementById("live-settings-form").addEventListener("submit", saveSettings);
   }
-
   function selectedValues(optionsId) {
     return [...document.querySelectorAll("#" + optionsId + " input[type=checkbox]:checked")].map(input => input.value);
   }
@@ -335,6 +319,12 @@ navigate("selector");
       const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/protection-options");
       renderProtectionDropdown("protection-roles-options", data.roles);
       renderProtectionDropdown("protection-channels-options", data.channels, "#");
+      const loggingSelect = document.getElementById("setting-log-channel");
+      if (loggingSelect) {
+        loggingSelect.replaceChildren(new Option("Use logging identifier fallback", ""));
+        (data.channels || []).forEach(channel => loggingSelect.add(new Option("#" + channel.name, channel.id)));
+        if (currentSettings?.logging_channel_id) loggingSelect.value = currentSettings.logging_channel_id;
+      }
       if (currentSettings) {
         setMultiSelect("protection-roles-options", currentSettings.exempt_role_ids);
         setMultiSelect("protection-channels-options", currentSettings.ignored_channel_ids);
@@ -417,14 +407,6 @@ navigate("selector");
       const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings");
       currentSettings = data.settings;
       await loadProtectionOptions();
-      const name = document.getElementById("settings-server-name");
-      if (name) name.textContent = activeGuild.name;
-      const enabled = document.getElementById("setting-enabled");
-      if (enabled) enabled.checked = data.settings.enabled;
-      const timeout = document.getElementById("setting-timeout");
-      if (timeout) timeout.value = Math.min(7, Math.max(1, Number(data.settings.timeout_days) || 7));
-      const threshold = document.getElementById("setting-threshold");
-      if (threshold) threshold.value = data.settings.delete_threshold;
       const channel = document.getElementById("setting-log-channel");
       if (channel) channel.value = data.settings.logging_channel_id || "";
       populateProtectionForm(data.settings);
@@ -444,10 +426,7 @@ navigate("selector");
     status.textContent = "Saving…";
     const payload = {
       ...(currentSettings || {}),
-      enabled: document.getElementById("setting-enabled").checked,
-      timeout_days: Math.min(7, Math.max(1, Number(document.getElementById("setting-timeout").value))),
-      delete_threshold: Number(document.getElementById("setting-threshold").value),
-      logging_channel_id: document.getElementById("setting-log-channel").value.trim() || null
+      logging_channel_id: document.getElementById("setting-log-channel").value || null
     };
     try {
       const saved = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings", { method: "PUT", body: JSON.stringify(payload) });
@@ -527,7 +506,7 @@ navigate("selector");
     const context = document.querySelector(".server-context");
     if (context) context.textContent = guild.name;
     document.querySelector(".connection").innerHTML = "<i></i> DISCORD CONNECTED";
-    settingsForm();
+    loggingForm();
     navigate("overview");
     loadSettings();
     loadBetaStatus();
@@ -572,6 +551,6 @@ navigate("selector");
     document.getElementById("protection-threshold-value").textContent = (Number(event.target.value) * 100).toFixed(1) + "%";
   });
 
-  settingsForm();
+  loggingForm();
   await initialize();
 })();
