@@ -42,6 +42,7 @@ navigate("selector");
   if (ownerNav) ownerNav.remove();
 
   let activeGuild = null;
+  let settingsRequest = 0;
   let signedIn = false;
   let currentSettings = null;
   let betaBotPresent = false;
@@ -77,9 +78,11 @@ navigate("selector");
     };
     const payload = { ...currentSettings, message_templates: messageTemplates };
     try {
-      const saved = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings", {
+      const guildId = activeGuild.id;
+      const saved = await api("/api/guilds/" + encodeURIComponent(guildId) + "/settings", {
         method: "PUT", body: JSON.stringify(payload)
       });
+      if (activeGuild?.id !== guildId) return;
       currentSettings = saved.settings;
       templates[currentTemplate].content = editor.value;
       templates[currentTemplate].enabled = document.getElementById("template-enabled").checked;
@@ -517,7 +520,9 @@ navigate("selector");
     if (!activeGuild) return;
     const status = document.getElementById("protection-status");
     try {
-      const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/protection-options");
+      const guildId = activeGuild.id;
+      const data = await api("/api/guilds/" + encodeURIComponent(guildId) + "/protection-options");
+      if (activeGuild?.id !== guildId) return false;
       renderProtectionDropdown("protection-roles-options", data.roles);
       renderProtectionDropdown("protection-channels-options", data.channels, "#");
       const loggingSelect = document.getElementById("setting-log-channel");
@@ -590,13 +595,15 @@ navigate("selector");
   async function saveProtectionSettings(event) {
     event.preventDefault();
     if (!activeGuild) return;
+    const guildId = activeGuild.id;
     const status = document.getElementById("protection-status");
     status.textContent = "Saving…";
     const payload = protectionPayload();
     try {
-      const saved = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings", {
+      const saved = await api("/api/guilds/" + encodeURIComponent(guildId) + "/settings", {
         method: "PUT", body: JSON.stringify(payload)
       });
+      if (activeGuild?.id !== guildId) return;
       currentSettings = saved.settings;
       status.textContent = "Saved successfully";
       renderOverview();
@@ -608,13 +615,17 @@ navigate("selector");
 
   async function loadSettings() {
     if (!activeGuild) return;
+    const guildId = activeGuild.id;
+    const requestId = ++settingsRequest;
     const status = document.getElementById("live-settings-status");
     if (status) status.textContent = "Loading…";
     try {
-      const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings");
+      const data = await api("/api/guilds/" + encodeURIComponent(guildId) + "/settings");
+      if (requestId !== settingsRequest || activeGuild?.id !== guildId) return;
       currentSettings = data.settings;
       populateMessageTemplates(data.settings);
       const optionsLoaded = await loadProtectionOptions();
+      if (requestId !== settingsRequest || activeGuild?.id !== guildId) return;
       const channel = document.getElementById("setting-log-channel");
       if (channel) channel.value = data.settings.logging_channel_id || "";
       populateProtectionForm(data.settings);
@@ -630,6 +641,8 @@ navigate("selector");
 
   async function saveSettings(event) {
     event.preventDefault();
+    if (!activeGuild) return;
+    const guildId = activeGuild.id;
     const status = document.getElementById("live-settings-status");
     status.textContent = "Saving…";
     const payload = {
@@ -637,7 +650,8 @@ navigate("selector");
       logging_channel_id: document.getElementById("setting-log-channel").value || null
     };
     try {
-      const saved = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings", { method: "PUT", body: JSON.stringify(payload) });
+      const saved = await api("/api/guilds/" + encodeURIComponent(guildId) + "/settings", { method: "PUT", body: JSON.stringify(payload) });
+      if (activeGuild?.id !== guildId) return;
       currentSettings = saved.settings;
       status.textContent = "Saved successfully";
       renderOverview();
