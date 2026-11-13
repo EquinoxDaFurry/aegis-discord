@@ -4,7 +4,7 @@ const breadcrumb = document.getElementById("breadcrumb-current");
 const toast = document.getElementById("toast");
 let toastTimer;
 function showToast(message){toast.textContent=message;toast.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove("show"),3400)}
-function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));if(page==="analytics")window.dispatchEvent(new Event("aegis:analytics-open"));}
+function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="overview")window.dispatchEvent(new Event("aegis:overview-open"));if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));if(page==="analytics")window.dispatchEvent(new Event("aegis:analytics-open"));}
 navLinks.forEach(link=>link.addEventListener("click",event=>{event.preventDefault();navigate(link.dataset.page)}));
 document.querySelectorAll("[data-page-link]").forEach(button=>button.addEventListener("click",()=>navigate(button.dataset.pageLink)));
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
@@ -251,6 +251,7 @@ navigate("selector");
       ["moderation-total","moderation-active","moderation-expired","moderation-ended"].forEach(id => document.getElementById(id).textContent = "—");
     }
   }
+  window.addEventListener("aegis:overview-open", () => { loadAnalytics(); loadModeration(); });
   window.addEventListener("aegis:moderation-open", loadModeration);
   document.getElementById("moderation-refresh")?.addEventListener("click", loadModeration);
   document.getElementById("moderation-search")?.addEventListener("input", renderModerationRows);
@@ -711,9 +712,7 @@ navigate("selector");
     loggingForm();
     navigate("overview");
     loadSettings();
-    loadAnalytics();
     loadBetaStatus();
-    loadModeration();
   }
 
   async function initialize() {
