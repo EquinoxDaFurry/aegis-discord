@@ -426,7 +426,7 @@ navigate("selector");
     });
   }
 
-  function showOwnerCase(item) {
+  async function showOwnerCase(item) {
     const panel = document.getElementById("owner-case-detail");
     const content = document.getElementById("owner-detail-content");
     document.getElementById("owner-detail-subtitle").textContent = "Case " + item.case_id + " · " + (item.guild_name || "Server " + item.guild_id);
@@ -446,6 +446,40 @@ navigate("selector");
     addLine("False-positive explanation", item.report_reason || "No false-positive report submitted.");
     addLine("Report submitted by", item.reporter_id || "—");
     addLine("Case status", item.status);
+    addLine("Flagged content", "Loading content from the Discord audit log…");
+    try {
+      const details = await api("/api/owner/cases/" + encodeURIComponent(item.case_id));
+      const rows = content.querySelectorAll(".moderation-detail-row");
+      const flaggedRow = rows[rows.length - 1];
+      if (flaggedRow) flaggedRow.querySelector("p").textContent = details.flagged_content || "No flagged content was recorded.";
+      if (details.image_urls?.length) {
+        const gallery = document.createElement("div");
+        gallery.className = "moderation-images";
+        const heading = document.createElement("small");
+        heading.textContent = "FLAGGED IMAGES";
+        const grid = document.createElement("div");
+        grid.className = "moderation-image-grid";
+        for (const url of details.image_urls) {
+          const link = document.createElement("a");
+          link.className = "moderation-image-link";
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          const image = document.createElement("img");
+          image.src = url;
+          image.alt = "Image attached to the Aegis detection log";
+          image.loading = "lazy";
+          link.appendChild(image);
+          grid.appendChild(link);
+        }
+        gallery.append(heading, grid);
+        content.appendChild(gallery);
+      }
+    } catch (error) {
+      const rows = content.querySelectorAll(".moderation-detail-row");
+      const flaggedRow = rows[rows.length - 1];
+      if (flaggedRow) flaggedRow.querySelector("p").textContent = "Could not load flagged content: " + error.message;
+    }
     if (item.original_message_url) {
       const link = document.createElement("a");
       link.href = item.original_message_url;
@@ -492,10 +526,10 @@ navigate("selector");
           const actions = document.createElement("td");
           const view = document.createElement("button"); view.type = "button"; view.className = "text-action"; view.textContent = "Details";
           view.addEventListener("click", () => showOwnerCase(item)); actions.appendChild(view);
-          if (item.status === "active" && item.report_reason) {
+          if (item.status === "active") {
             const reverse = document.createElement("button"); reverse.type = "button"; reverse.className = "text-action owner-reverse-action"; reverse.textContent = "Reverse timeout";
             reverse.addEventListener("click", async () => {
-              const reasonText = window.prompt("Reason for reversing this false-positive timeout (5–500 characters):", "Confirmed false positive");
+              const reasonText = window.prompt("Reason for reversing this timeout (5–500 characters):", item.report_reason ? "Confirmed false positive" : "Owner-reviewed timeout reversal");
               if (reasonText === null) return;
               try {
                 await api("/api/owner/cases/" + encodeURIComponent(item.case_id) + "/reverse", { method: "POST", body: JSON.stringify({ reason: reasonText }) });
