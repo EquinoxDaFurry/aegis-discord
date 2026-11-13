@@ -221,7 +221,7 @@ impl Handler {
                 .is_some_and(|topic| topic.contains(&self.config.logging_identifier))));
         let Some(channel) = target else {
             warn!(guild_id = %guild_id, "No configured or identifier-matched Aegis logging channel was found");
-            return;
+            return None;
         };
         let safe_reason = flagged_content.chars().take(1000).collect::<String>().replace("```", "'''");
         let user_mention = message.author.mention().to_string();
