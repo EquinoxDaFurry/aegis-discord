@@ -629,7 +629,8 @@ impl EventHandler for Handler {
                     let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
                     return;
                 }
-                let modal = CreateModal::new(format!("aegis_fp_modal:{log_id}"), "Mark as False Positive")
+                let is_dm_report = component.data.custom_id.starts_with("aegis_fp_dm:");
+                let modal = CreateModal::new(format!("aegis_fp_modal:{log_id}:{}", if is_dm_report { "dm" } else { "audit" }), "Mark as False Positive")
                     .components(vec![CreateActionRow::InputText(
                         CreateInputText::new(InputTextStyle::Paragraph, "Why was this a false positive?", "reason")
                             .placeholder("Explain why you believe the bot incorrectly flagged this content...")
@@ -641,8 +642,9 @@ impl EventHandler for Handler {
                 }
             }
             Interaction::Modal(modal) if modal.data.custom_id.starts_with("aegis_fp_modal:") => {
-                let id_text = modal.data.custom_id.trim_start_matches("aegis_fp_modal:");
-                let Ok(log_id) = id_text.parse::<u64>() else { return; };
+                let mut id_parts = modal.data.custom_id.trim_start_matches("aegis_fp_modal:").split(':');
+                let Ok(log_id) = id_parts.next().unwrap_or_default().parse::<u64>() else { return; };
+                let is_dm_report = id_parts.next() == Some("dm");
                 let already = self.false_positive_submitted.lock().map(|s| s.contains(&log_id)).unwrap_or(false);
                 if already {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
