@@ -19,12 +19,18 @@ struct AppState {
     oauth_client_id: String,
     oauth_client_secret: String,
     oauth_redirect_uri: String,
+    bot_token: String,
     http: reqwest::Client,
     runtime_info: SharedRuntimeInfo,
 }
 
 #[derive(Serialize)]
 struct HealthResponse { status: &'static str, database: &'static str }
+
+#[derive(Serialize)]
+struct BetaStatusResponse { beta_bot_present: bool }
+
+const BETA_BOT_USER_ID: &str = "1532972276805537792";
 
 #[derive(Clone, Serialize, Deserialize)]
 struct DiscordGuild {
@@ -145,6 +151,36 @@ fn can_manage(guild: &DiscordGuild) -> bool {
 
 async fn get_runtime_info(State(state): State<AppState>) -> Json<Option<super::RuntimeInfo>> {
     Json(state.runtime_info.read().await.clone())
+}
+
+async fn beta_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(guild_id): Path<String>,
+) -> Result<Json<BetaStatusResponse>, StatusCode> {
+    let (_, _, _, guilds) = session_user(&headers, &state.db).await?;
+    let guild = guilds.iter().find(|guild| guild.id == guild_id && can_manage(guild))
+        .ok_or(StatusCode::FORBIDDEN)?;
+
+    let response = state.http
+        .get(format!("https://discord.com/api/v10/guilds/{}/members/{}", guild.id, BETA_BOT_USER_ID))
+        .bearer_auth(&state.bot_token)
+        .send().await.map_err(|error| {
+            tracing::error!(%error, guild_id = %guild.id, "Could not check beta bot membership");
+            StatusCode::BAD_GATEWAY
+        })?;
+
+    if response.status().is_success() {
+        return Ok(Json(BetaStatusResponse { beta_bot_present: true }));
+    }
+    if response.status() == StatusCode::NOT_FOUND {
+        return Ok(Json(BetaStatusResponse { beta_bot_present: false }));
+    }
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    tracing::error!(%status, guild_id = %guild.id, response = %body.chars().take(300).collect::<String>(), "Discord beta bot membership check failed");
+    Err(StatusCode::BAD_GATEWAY)
 }
 
 async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse>, StatusCode> {
@@ -313,8 +349,8 @@ async fn save_settings(
     Ok(Json(SettingsResponse { guild_id, settings, updated_at: Some(updated) }))
 }
 
-pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, runtime_info: SharedRuntimeInfo) -> Router {
-    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, http: reqwest::Client::new(), runtime_info };
+pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, runtime_info: SharedRuntimeInfo) -> Router {
+    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, http: reqwest::Client::new(), runtime_info };
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
@@ -323,15 +359,16 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/auth/logout", post(logout))
         .route("/api/me", get(me))
         .route("/api/runtime", get(get_runtime_info))
+        .route("/api/guilds/:guild_id/beta-status", get(beta_status))
         .route("/api/guilds/:guild_id/settings", get(get_settings).put(save_settings))
         .nest_service("/", ServeDir::new("dashboard"))
         .with_state(state)
 }
 
-pub async fn serve(bind: &str, db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, runtime_info: SharedRuntimeInfo) -> anyhow::Result<()> {
+pub async fn serve(bind: &str, db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, runtime_info: SharedRuntimeInfo) -> anyhow::Result<()> {
     let address: SocketAddr = bind.parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(%address, "Aegis dashboard server listening");
-    axum::serve(listener, router(db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, runtime_info)).await?;
+    axum::serve(listener, router(db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, runtime_info)).await?;
     Ok(())
 }
