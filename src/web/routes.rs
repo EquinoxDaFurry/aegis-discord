@@ -630,15 +630,21 @@ async fn reverse_owner_case(
         return Err(StatusCode::BAD_GATEWAY);
     }
     let member: Value = member_response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
-    let active_until = member.get("communication_disabled_until").and_then(Value::as_str)
-        .and_then(discord_timestamp_unix).is_some_and(|until| until > now());
-    if !active_until {
+    let current_until = member.get("communication_disabled_until").and_then(Value::as_str)
+        .and_then(discord_timestamp_unix);
+    let recorded_until = case.2.unwrap_or_default();
+    if current_until.is_none_or(|until| until <= now()) {
         let _ = sqlx::query("UPDATE moderation_cases SET status = 'expired' WHERE case_id = ? AND status = 'active'")
             .bind(&case_id).execute(&state.db).await;
         return Err(StatusCode::CONFLICT);
     }
+    // Do not clear a timeout that a moderator extended or replaced after Aegis applied its own timeout.
+    if current_until.is_some_and(|until| (until - recorded_until).abs() > 60) {
+        return Err(StatusCode::CONFLICT);
+    }
 
     let audit_reason = format!("Aegis owner reversal by {}: {}", owner_id, reason.chars().take(350).collect::<String>());
+    let audit_reason = url::form_urlencoded::byte_serialize(audit_reason.as_bytes()).collect::<String>();
     let response = state.http.patch(format!("https://discord.com/api/v10/guilds/{}/members/{}", case.0, case.1))
         .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
         .header("X-Audit-Log-Reason", audit_reason)
@@ -785,7 +791,7 @@ async fn oauth_callback(
 
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<MeResponse>, StatusCode> {
     let (id, username, avatar, guilds) = session_user(&headers, &state.db).await?;
-    let is_owner = state.owner_id.as_deref().is_some_and(|owner| owner == id);
+    let is_owner = state.owner_id.as_deref().is_some_and(|owner| owner == id.as_str());
     Ok(Json(MeResponse { user: UserView { id, username, avatar }, guilds, is_owner }))
 }
 
