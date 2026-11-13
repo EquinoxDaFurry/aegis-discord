@@ -1,3 +1,4 @@
+use super::SharedRuntimeInfo;
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
@@ -19,6 +20,7 @@ struct AppState {
     oauth_client_secret: String,
     oauth_redirect_uri: String,
     http: reqwest::Client,
+    runtime_info: SharedRuntimeInfo,
 }
 
 #[derive(Serialize)]
@@ -139,6 +141,10 @@ async fn session_user(headers: &HeaderMap, db: &SqlitePool) -> Result<(String, S
 fn can_manage(guild: &DiscordGuild) -> bool {
     if guild.owner { return true; }
     guild.permissions.parse::<u64>().map(|bits| bits & (0x8 | 0x20) != 0).unwrap_or(false)
+}
+
+async fn runtime_info(State(state): State<AppState>) -> Json<Option<super::RuntimeInfo>> {
+    Json(state.runtime_info.read().await.clone())
 }
 
 async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse>, StatusCode> {
@@ -307,8 +313,8 @@ async fn save_settings(
     Ok(Json(SettingsResponse { guild_id, settings, updated_at: Some(updated) }))
 }
 
-pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String) -> Router {
-    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, http: reqwest::Client::new() };
+pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, runtime_info: SharedRuntimeInfo) -> Router {
+    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, http: reqwest::Client::new(), runtime_info };
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
@@ -316,15 +322,16 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/auth/callback", get(oauth_callback))
         .route("/auth/logout", post(logout))
         .route("/api/me", get(me))
+        .route("/api/runtime", get(runtime_info))
         .route("/api/guilds/:guild_id/settings", get(get_settings).put(save_settings))
         .nest_service("/", ServeDir::new("dashboard"))
         .with_state(state)
 }
 
-pub async fn serve(bind: &str, db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String) -> anyhow::Result<()> {
+pub async fn serve(bind: &str, db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, runtime_info: SharedRuntimeInfo) -> anyhow::Result<()> {
     let address: SocketAddr = bind.parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(%address, "Aegis dashboard server listening");
-    axum::serve(listener, router(db, oauth_client_id, oauth_client_secret, oauth_redirect_uri)).await?;
+    axum::serve(listener, router(db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, runtime_info)).await?;
     Ok(())
 }
