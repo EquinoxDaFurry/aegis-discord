@@ -64,6 +64,50 @@ impl Handler {
         }
     }
 
+    async fn guild_settings(&self, guild_id: u64) -> serde_json::Value {
+        let stored = sqlx::query_as::<_, (String,)>("SELECT config_json FROM guild_configs WHERE guild_id = ?")
+            .bind(guild_id.to_string()).fetch_optional(&self.analytics_db).await;
+        match stored {
+            Ok(Some((json,))) => serde_json::from_str(&json).unwrap_or_else(|error| {
+                warn!(%error, guild_id, "Invalid per-server settings JSON; using defaults");
+                serde_json::json!({})
+            }),
+            Ok(None) => serde_json::json!({}),
+            Err(error) => {
+                warn!(%error, guild_id, "Could not read per-server settings; using defaults");
+                serde_json::json!({})
+            }
+        }
+    }
+
+    fn setting_bool(settings: &serde_json::Value, key: &str, default: bool) -> bool {
+        settings.get(key).and_then(serde_json::Value::as_bool).unwrap_or(default)
+    }
+
+    fn setting_string_list_contains(settings: &serde_json::Value, key: &str, value: &str) -> bool {
+        settings.get(key).and_then(serde_json::Value::as_array)
+            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(value)))
+    }
+
+    fn render_template(
+        settings: &serde_json::Value,
+        key: &str,
+        default: &str,
+        values: &[(&str, String)],
+        limit: usize,
+    ) -> Option<String> {
+        let template = settings.get("message_templates").and_then(|items| items.get(key));
+        if template.and_then(|item| item.get("enabled")).and_then(serde_json::Value::as_bool) == Some(false) {
+            return None;
+        }
+        let mut content = template.and_then(|item| item.get("content"))
+            .and_then(serde_json::Value::as_str).unwrap_or(default).to_owned();
+        for (name, value) in values {
+            content = content.replace(&format!("{{{name}}}"), value);
+        }
+        Some(content.chars().take(limit).collect())
+    }
+
     async fn send_error_dm(&self, ctx: &Context, error_text: &str) {
         if let Ok(user) = ctx.http.get_user(UserId::new(DEBUG_USER_ID)).await {
             let content = format!("⚠️ **Bot Error**\n\n```text\n{}
@@ -83,7 +127,7 @@ impl Handler {
         false
     }
 
-    async fn scan_attachments(&self, ctx: &Context, message: &Message, campaign_flagged: bool) -> Option<(String, Vec<(String, Vec<u8>)>, f64)> {
+    async fn scan_attachments(&self, ctx: &Context, message: &Message, campaign_flagged: bool, threshold: f64) -> Option<(String, Vec<(String, Vec<u8>)>, f64)> {
         let mut best: Option<(f64, String)> = None;
         let mut flagged = Vec::new();
         for attachment in &message.attachments {
@@ -108,7 +152,7 @@ impl Handler {
             let detector = self.image_detector.clone();
             let scan_bytes = bytes.to_vec();
             let scan_result = tokio::time::timeout(Duration::from_secs(30),
-                tokio::task::spawn_blocking(move || detector.scan(&scan_bytes))).await;
+                tokio::task::spawn_blocking(move || detector.scan_with_threshold(&scan_bytes, threshold))).await;
             let scan_result = match scan_result {
                 Ok(Ok(result)) => result,
                 Ok(Err(error)) => { warn!(%error, "Image scan worker failed"); continue; }
@@ -143,25 +187,40 @@ impl Handler {
         best.map(|(confidence, reason)| (reason, flagged, confidence))
     }
 
-    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, images: Vec<(String, Vec<u8>)>) {
+    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, images: Vec<(String, Vec<u8>)>, settings: &serde_json::Value) {
         let Some(guild_id) = message.guild_id else { return };
         let channels = match guild_id.channels(&ctx.http).await {
             Ok(channels) => channels,
             Err(error) => { warn!(%error, "Could not inspect server channels for Aegis logging channel"); return; }
         };
-        let target = channels.values().find(|channel| channel.topic.as_deref()
-            .is_some_and(|topic| topic.contains(&self.config.logging_identifier)));
-        let Some(channel) = target else { return };
+        let configured = settings.get("logging_channel_id").and_then(serde_json::Value::as_str)
+            .and_then(|id| id.parse::<u64>().ok())
+            .map(serenity::all::ChannelId::new);
+        let target = configured.and_then(|id| channels.get(&id))
+            .or_else(|| channels.values().find(|channel| channel.topic.as_deref()
+                .is_some_and(|topic| topic.contains(&self.config.logging_identifier))));
+        let Some(channel) = target else {
+            warn!(guild_id = %guild_id, "No configured or identifier-matched Aegis logging channel was found");
+            return;
+        };
         let safe_reason = flagged_content.chars().take(1000).collect::<String>().replace("```", "'''");
+        let user_mention = message.author.mention().to_string();
+        let channel_mention = message.channel_id.mention().to_string();
+        let description = Self::render_template(settings, "detection", "Possible scam content detected.",
+            &[("user", user_mention.clone()), ("user_id", message.author.id.to_string()),
+              ("reason", reason.to_owned()), ("flagged_content", safe_reason.clone()),
+              ("channel", channel_mention.clone()), ("deleted", deleted.to_string()),
+              ("timeout_status", timeout_status.to_owned())], 3900)
+            .unwrap_or_else(|| "Possible scam content detected.".to_owned());
         let embed = CreateEmbed::new()
             .title("🚨 Scam Detected")
-            .description("Possible scam content detected.")
+            .description(description)
             .timestamp(Timestamp::now())
             .color(0xED4245)
-            .field("User", format!("{}\n`{}`", message.author.mention(), message.author.id), false)
+            .field("User", format!("{}\n`{}`", user_mention, message.author.id), false)
             .field("Reason", reason, false)
             .field("Flagged Content", format!("```text\n{}\n```", safe_reason), false)
-            .field("Channel", message.channel_id.mention().to_string(), true)
+            .field("Channel", channel_mention, true)
             .field("Deleted", deleted.to_string(), true)
             .field("Timeout", timeout_status, false);
         let button = CreateButton::new("aegis_false_positive")
@@ -175,11 +234,11 @@ impl Handler {
             Ok(log_message) => {
                 if let Ok(mut reports) = self.false_positive_reports.lock() {
                     reports.insert(log_message.id.get(), FalsePositiveData {
-                        user_mention: message.author.mention().to_string(),
+                        user_mention,
                         user_id: message.author.id.get(),
                         guild_name: message.guild_id.and_then(|id| ctx.cache.guild(id).map(|g| g.name.clone())).unwrap_or_else(|| "Unknown server".to_owned()),
                         guild_id: guild_id.get(),
-                        channel_name: message.channel_id.mention().to_string(),
+                        channel_name: channel_mention,
                         reason: reason.chars().take(1000).collect(),
                         flagged_content: safe_reason,
                         message_url: message.link(),
@@ -194,42 +253,58 @@ impl Handler {
         }
     }
 
-    async fn handle_detection(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, images: Vec<(String, Vec<u8>)>, confidence: Option<f64>) {
+    async fn handle_detection(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, images: Vec<(String, Vec<u8>)>, confidence: Option<f64>, settings: &serde_json::Value) {
         self.threats_since_heartbeat.fetch_add(1, Ordering::Relaxed);
-        let deleted = match message.delete(&ctx.http).await {
-            Ok(()) => true,
-            Err(error) => {
-                warn!(%error, "Could not delete detected message (check Manage Messages permission)");
-                self.send_error_dm(ctx, &format!("Could not delete detected message: {error}")).await;
-                false
-            }
-        };
         let Some(guild_id) = message.guild_id else { return };
-        self.record_analytics(guild_id.get(), 0, 1, confidence.map(|score| score.clamp(0.0, 1.0)), if deleted { 1 } else { 0 }, 0).await;
-        if self.on_cooldown(guild_id.get(), message.author.id.get()) { return; }
+        let dry_run = Self::setting_bool(settings, "dry_run", false);
+        let auto_delete = Self::setting_bool(settings, "auto_delete", true) && !dry_run;
+        let auto_timeout = Self::setting_bool(settings, "auto_timeout", true) && !dry_run;
+        let timeout_days = settings.get("timeout_days").and_then(serde_json::Value::as_u64)
+            .unwrap_or(self.config.timeout_days).clamp(1, 7);
 
-        let timeout_status = match guild_id.member(&ctx.http, message.author.id).await {
-            Ok(mut member) => {
-                let until = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
-                    .saturating_add(self.config.timeout_days.saturating_mul(86_400));
-                match Timestamp::from_unix_timestamp(until as i64) {
-                    Ok(timestamp) => match member.disable_communication_until_datetime(&ctx.http, timestamp).await {
-                        Ok(_) => "Timed out successfully".to_owned(),
-                        Err(error) => {
-                            warn!(%error, "Could not timeout affected user");
-                            self.send_error_dm(ctx, &format!("Could not timeout detected user: {error}")).await;
-                            "⚠️ Unable to timeout user (missing permissions or role hierarchy)".to_owned()
-                        }
-                    },
-                    Err(error) => {
-                        warn!(%error, "Could not calculate timeout expiry");
-                        "⚠️ Discord API error while timing out".to_owned()
-                    }
+        let deleted = if auto_delete {
+            match message.delete(&ctx.http).await {
+                Ok(()) => true,
+                Err(error) => {
+                    warn!(%error, "Could not delete detected message (check Manage Messages permission)");
+                    self.send_error_dm(ctx, &format!("Could not delete detected message: {error}")).await;
+                    false
                 }
             }
-            Err(error) => {
-                warn!(%error, "Could not fetch affected guild member");
-                "⚠️ Unable to timeout user (missing permissions or role hierarchy)".to_owned()
+        } else { false };
+        self.record_analytics(guild_id.get(), 0, 1, confidence.map(|score| score.clamp(0.0, 1.0)), if deleted { 1 } else { 0 }, 0).await;
+
+        let cooldown = self.on_cooldown(guild_id.get(), message.author.id.get());
+        let timeout_status = if dry_run {
+            "Dry-run mode: no timeout applied".to_owned()
+        } else if !auto_timeout {
+            "Automatic timeout disabled".to_owned()
+        } else if cooldown {
+            "Cooldown active: timeout skipped".to_owned()
+        } else {
+            match guild_id.member(&ctx.http, message.author.id).await {
+                Ok(mut member) => {
+                    let until = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                        .saturating_add(timeout_days.saturating_mul(86_400));
+                    match Timestamp::from_unix_timestamp(until as i64) {
+                        Ok(timestamp) => match member.disable_communication_until_datetime(&ctx.http, timestamp).await {
+                            Ok(_) => "Timed out successfully".to_owned(),
+                            Err(error) => {
+                                warn!(%error, "Could not timeout affected user");
+                                self.send_error_dm(ctx, &format!("Could not timeout detected user: {error}")).await;
+                                "⚠️ Unable to timeout user (missing permissions or role hierarchy)".to_owned()
+                            }
+                        },
+                        Err(error) => {
+                            warn!(%error, "Could not calculate timeout expiry");
+                            "⚠️ Discord API error while timing out".to_owned()
+                        }
+                    }
+                }
+                Err(error) => {
+                    warn!(%error, "Could not fetch affected guild member");
+                    "⚠️ Unable to timeout user (missing permissions or role hierarchy)".to_owned()
+                }
             }
         };
 
@@ -241,19 +316,26 @@ impl Handler {
             Err(_) => "Unknown server".to_owned(),
         };
         let flagged_text = flagged_content.chars().take(1500).collect::<String>();
-        let dm_text = format!(
-            "Hello <@{}>,\n\n⚠️ **Security Alert**\n\nYour account sent content commonly associated with scam campaigns.\n\nYour account may have been compromised.\n\nPlease:\n\n🔒 Reset your Discord password\n🛡️ Enable Two-Factor Authentication\n🦠 Run malware scans\n🔗 Review Authorized Apps\n\n\nYou have been timed out in:\n\n**{}**\n\nfor **{} days**.\n\n\nDetected location:\n\n<#{}>\n\n\nFlagged Content:\n\n```text\n{}\n```\n\n\nIf this was a mistake:\n\n{}\n\n\nPlease include:\n- The flagged message\n- What you intended to send\n- Any useful investigation details\n\n\n-# Anti-Scam Protection System",
-            message.author.id, guild_name, self.config.timeout_days, message.channel_id, flagged_text.chars().take(1500).collect::<String>(), self.config.dm_report_server
-        );
-        let mut dm = CreateMessage::new().content(dm_text);
-        for (filename, bytes) in &images {
-            dm = dm.add_file(CreateAttachment::bytes(bytes.clone(), filename.clone()));
+        if timeout_status == "Timed out successfully" {
+            let default_dm = "Hello {user_id},\n\n⚠️ **Security Alert**\n\nYour account sent content commonly associated with scam campaigns.\n\nYour account may have been compromised.\n\nPlease:\n\n🔒 Reset your Discord password\n🛡️ Enable Two-Factor Authentication\n🦠 Run malware scans\n🔗 Review Authorized Apps\n\n\nYou have been timed out in:\n\n**{server}**\n\nfor **{duration} days**.\n\n\nDetected location:\n\n{channel}\n\n\nFlagged Content:\n\n```text\n{flagged_content}\n```\n\n\nIf this was a mistake:\n\n{report_server}\n\n\nPlease include:\n- The flagged message\n- What you intended to send\n- Any useful investigation details\n\n\n-# Anti-Scam Protection System";
+            let dm_text = Self::render_template(settings, "timeout", default_dm,
+                &[("user", message.author.mention().to_string()), ("user_id", format!("<@{}>", message.author.id)),
+                  ("server", guild_name), ("duration", timeout_days.to_string()),
+                  ("channel", format!("<#{}>", message.channel_id)), ("reason", reason.to_owned()),
+                  ("flagged_content", flagged_text), ("report_server", self.config.dm_report_server.clone()),
+                  ("deleted", deleted.to_string()), ("timeout_status", timeout_status.clone())], 1900);
+            if let Some(dm_text) = dm_text {
+                let mut dm = CreateMessage::new().content(dm_text);
+                for (filename, bytes) in &images {
+                    dm = dm.add_file(CreateAttachment::bytes(bytes.clone(), filename.clone()));
+                }
+                if let Err(error) = message.author.dm(&ctx.http, dm).await {
+                    warn!(%error, "Could not DM affected user");
+                    self.send_error_dm(ctx, &format!("Could not DM affected user: {error}")).await;
+                }
+            }
         }
-        if let Err(error) = message.author.dm(&ctx.http, dm).await {
-            warn!(%error, "Could not DM affected user");
-            self.send_error_dm(ctx, &format!("Could not DM affected user: {error}")).await;
-        }
-        self.send_audit_log(ctx, message, reason, flagged_content, deleted, &timeout_status, images).await;
+        self.send_audit_log(ctx, message, reason, flagged_content, deleted, &timeout_status, images, settings).await;
     }
 }
 #[async_trait]
@@ -573,21 +655,44 @@ impl EventHandler for Handler {
             let _ = message.channel_id.say(&ctx.http, format!("✅ <#{}> configured as the logging channel.", channel_id)).await;
             return;
         }
-        let text_detection = self.text_detector.scan(&message.content);
+        let settings = self.guild_settings(message_guild_id.get()).await;
+        if !Self::setting_bool(&settings, "enabled", true) { return; }
+        if Self::setting_string_list_contains(&settings, "ignored_channel_ids", &message.channel_id.get().to_string()) { return; }
+
+        let cached_member = ctx.cache.guild(message_guild_id)
+            .and_then(|guild| guild.members.get(&message.author.id).cloned());
+        if let Some(member) = cached_member.as_ref() {
+            if Self::setting_bool(&settings, "exempt_admins", true)
+                && ctx.cache.guild(message_guild_id).is_some_and(|guild| guild.member_permissions(member).administrator()) {
+                return;
+            }
+            if settings.get("exempt_role_ids").and_then(serde_json::Value::as_array).is_some_and(|roles| {
+                member.roles.iter().any(|role| {
+                    let id = role.get().to_string();
+                    roles.iter().any(|item| item.as_str() == Some(id.as_str()))
+                })
+            }) { return; }
+        }
+
+        let text_enabled = Self::setting_bool(&settings, "text_detection", true);
+        let image_enabled = Self::setting_bool(&settings, "image_detection", true);
+        let threshold = settings.get("delete_threshold").and_then(serde_json::Value::as_f64)
+            .unwrap_or(self.config.delete_threshold).clamp(0.5, 1.0);
+        let text_detection = if text_enabled { self.text_detector.scan(&message.content) } else { None };
         if let Some(detection) = text_detection.as_ref() {
-            // Python treats CAMPAIGN as an image-context bonus, not a standalone text strike.
             if detection.kind != DetectionKind::Campaign {
                 info!(guild_id = ?message.guild_id, channel_id = %message.channel_id,
                     user_id = %message.author.id, "Aegis detected a text threat");
-                self.handle_detection(&ctx, &message, &detection.reason, &detection.matched_text, Vec::new(), None).await;
+                self.handle_detection(&ctx, &message, &detection.reason, &detection.matched_text, Vec::new(), None, &settings).await;
                 return;
             }
         }
+        if !image_enabled { return; }
         let campaign_flagged = text_detection.as_ref().is_some_and(|d| d.reason == "discord_attachment_scam");
-        let image_detection = self.scan_attachments(&ctx, &message, campaign_flagged).await;
+        let image_detection = self.scan_attachments(&ctx, &message, campaign_flagged, threshold).await;
         let Some((reason, bytes, confidence)) = image_detection else { return; };
         info!(guild_id = ?message.guild_id, channel_id = %message.channel_id,
             user_id = %message.author.id, "Aegis detected an image threat");
-        self.handle_detection(&ctx, &message, "image_campaign", &reason, bytes, Some(confidence)).await;
+        self.handle_detection(&ctx, &message, "image_campaign", &reason, bytes, Some(confidence), &settings).await;
     }
 }
