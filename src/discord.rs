@@ -334,9 +334,16 @@ impl Handler {
                 Ok(member) => member,
                 Err(_) => continue,
             };
-            let target_guild = ctx.cache.guild(target_guild_id);
-            if Self::setting_bool(&target_settings, "exempt_admins", true)
-                && target_guild.as_ref().is_some_and(|guild| guild.member_permissions(&member).administrator()) { continue; }
+            // CacheRef is deliberately scoped here: Serenity cache references are not Send
+            // and must never be held across an await in an event-handler future.
+            let (is_admin, cached_target_name) = {
+                let target_guild = ctx.cache.guild(target_guild_id);
+                target_guild.as_ref().map(|guild| (
+                    guild.member_permissions(&member).administrator(),
+                    guild.name.clone(),
+                )).unwrap_or((false, String::new()))
+            };
+            if Self::setting_bool(&target_settings, "exempt_admins", true) && is_admin { continue; }
             if target_settings.get("exempt_role_ids").and_then(serde_json::Value::as_array).is_some_and(|roles| {
                 member.roles.iter().any(|role| {
                     let id = role.get().to_string();
@@ -372,10 +379,11 @@ impl Handler {
             let Some(channel) = channel else {
                 warn!(target_guild_id = %target_guild_id, "No logging channel found for cross-server action"); continue;
             };
-            let target_name = match target_guild.as_ref() {
-                Some(guild) => guild.name.clone(),
-                None => target_guild_id.to_partial_guild(&ctx.http).await
-                    .map(|guild| guild.name).unwrap_or_else(|_| "Unknown server".to_owned()),
+            let target_name = if cached_target_name.is_empty() {
+                target_guild_id.to_partial_guild(&ctx.http).await
+                    .map(|guild| guild.name).unwrap_or_else(|_| "Unknown server".to_owned())
+            } else {
+                cached_target_name
             };
             let safe_flagged = flagged_content.chars().take(1200).collect::<String>().replace("```", "'''");
             let embed = CreateEmbed::new().title("Cross Server Intelligence Network")
