@@ -410,6 +410,15 @@ impl Handler {
                         .bind(created_at).bind(source_message.link()).execute(&self.analytics_db).await {
                         warn!(%error, "Could not persist cross-server moderation case");
                     }
+                    if let Err(error) = sqlx::query("UPDATE cross_server_actions SET case_id = ? WHERE source_guild_id = ? AND target_guild_id = ? AND member_id = ? AND source_message_id = ?")
+                        .bind(log_message.id.get().to_string())
+                        .bind(source_guild_id.get().to_string())
+                        .bind(target_guild_id.get().to_string())
+                        .bind(user_id.get().to_string())
+                        .bind(source_message.id.get().to_string())
+                        .execute(&self.analytics_db).await {
+                        warn!(%error, case_id = %log_message.id, "Could not link cross-server action to owner case");
+                    }
                     if let Ok(mut reports) = self.false_positive_reports.lock() {
                         reports.insert(log_message.id.get(), FalsePositiveData {
                             user_mention: user_id.mention().to_string(), user_id: user_id.get(),
