@@ -359,7 +359,7 @@ struct ModerationIncident {
     reason: String, flagged_content: String, confidence: Option<f64>,
     original_confidence: Option<f64>, channel_id: Option<String>, deleted: bool,
     timeout_days: u64, timeout_until: Option<String>, status: String,
-    created_at: i64, log_url: String,
+    created_at: i64, log_url: String, image_urls: Vec<String>,
 }
 fn snowflake_timestamp(id: &str) -> Option<i64> {
     let value = id.parse::<u64>().ok()?;
@@ -423,7 +423,7 @@ async fn moderation(
     };
     let cutoff = now() - 9 * 86_400;
     let mut before: Option<String> = None;
-    let mut raw: Vec<(String,String,String,String,Option<f64>,Option<f64>,Option<String>,bool,i64)> = Vec::new();
+    let mut raw: Vec<(String,String,String,String,Option<f64>,Option<f64>,Option<String>,bool,i64,Vec<String>)> = Vec::new();
     let mut reached_cutoff = false;
     for _ in 0..100 {
         let url = format!("https://discord.com/api/v10/channels/{}/messages", log_channel_id);
@@ -462,7 +462,20 @@ async fn moderation(
             let original_confidence = extract_percent(&flagged, "Original Confidence:");
             let channel_id = embed_field(embed, "Channel").and_then(|v| extract_id(v, "<#"));
             let deleted = embed_field(embed, "Deleted").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"));
-            raw.push((message_id.to_owned(), user_id, reason, flagged, confidence, original_confidence, channel_id, deleted, created_at));
+            // Aegis uploads the original detected image(s) as attachments on its audit message.
+            // Only return Discord CDN attachment URLs with image MIME types or image extensions.
+            let image_urls = message.get("attachments").and_then(Value::as_array).into_iter().flatten()
+                .filter_map(|attachment| {
+                    let url = attachment.get("url").and_then(Value::as_str)?;
+                    let filename = attachment.get("filename").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
+                    let content_type = attachment.get("content_type").and_then(Value::as_str).unwrap_or_default();
+                    let image_extension = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif"]
+                        .iter().any(|extension| filename.ends_with(extension));
+                    let trusted_cdn = url.starts_with("https://cdn.discordapp.com/attachments/")
+                        || url.starts_with("https://media.discordapp.net/attachments/");
+                    (trusted_cdn && (content_type.starts_with("image/") || image_extension)).then(|| url.to_owned())
+                }).collect::<Vec<_>>();
+            raw.push((message_id.to_owned(), user_id, reason, flagged, confidence, original_confidence, channel_id, deleted, created_at, image_urls));
         }
         let Some(oldest_id) = oldest_id else { reached_cutoff = true; break; };
         if snowflake_timestamp(&oldest_id).is_some_and(|t| t < cutoff) || messages.len() < 100 {
@@ -475,7 +488,7 @@ async fn moderation(
     let mut member_cache: HashMap<String,(String,Option<String>,Option<String>,bool)> = HashMap::new();
     let mut active_assigned: HashSet<String> = HashSet::new();
     let mut incidents = Vec::with_capacity(raw.len());
-    for (message_id,user_id,reason,flagged_content,confidence,original_confidence,channel_id,deleted,created_at) in raw {
+    for (message_id,user_id,reason,flagged_content,confidence,original_confidence,channel_id,deleted,created_at,image_urls) in raw {
         if !member_cache.contains_key(&user_id) {
             let response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/members/{}", guild.id, user_id))
                 .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token)).send().await
@@ -507,7 +520,7 @@ async fn moderation(
         let log_url = format!("https://discord.com/channels/{}/{}/{}", guild.id, log_channel_id, message_id);
         incidents.push(ModerationIncident { id: message_id, user_id, username, avatar_url, reason, flagged_content,
             confidence, original_confidence, channel_id, deleted, timeout_days: guild_timeout_days,
-            timeout_until, status, created_at, log_url });
+            timeout_until, status, created_at, log_url, image_urls });
     }
     incidents.sort_by(|a,b| b.created_at.cmp(&a.created_at));
     Ok(Json(ModerationResponse { guild_id, logging_channel_id: Some(log_channel_id), lookback_days: 9,
