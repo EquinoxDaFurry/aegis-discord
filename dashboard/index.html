@@ -155,7 +155,37 @@ If you believe this is a mistake, please submit a false-positive report so the s
           <div class="owner-safety"><span>⬡</span><div><strong>Reversal safety checks</strong><p>The live implementation will verify the original action, confirm the timeout is still active, prevent duplicate reversals, and record the owner ID, timestamp, and reason.</p></div></div>
         </section>
 
-        <section class="page" id="page-moderation"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / MODERATION</div><h1>Moderation</h1><p>Review moderation activity and configure enforcement behavior.</p></div></div><div class="panel placeholder-panel"><span>⚖</span><h2>Moderation controls</h2><p>This section is reserved for timeout duration, cooldowns, review queues, and server moderation history.</p><button class="button button-secondary" data-page-link="messages">Configure bot messages →</button></div></section>
+        <section class="page" id="page-moderation">
+          <div class="page-heading">
+            <div><div class="eyebrow">SERVER SECURITY / MODERATION HISTORY</div><h1>Moderation</h1><p>Successful Aegis timeouts recorded in this server's Discord logging channel.</p></div>
+            <div class="heading-actions"><span class="server-context" id="moderation-window">LAST 9 DAYS</span><button class="button button-secondary" id="moderation-refresh" type="button">↻ Refresh</button></div>
+          </div>
+          <div class="notice" id="moderation-warning" hidden><span class="notice-mark">!</span><div><strong id="moderation-warning-title">Moderation history unavailable</strong><p id="moderation-warning-text"></p></div></div>
+          <div class="stat-grid moderation-stats">
+            <article class="stat-card"><div class="stat-top"><span>SUCCESSFUL TIMEOUTS</span><span class="stat-icon">◷</span></div><strong id="moderation-total">—</strong><small>Found in the last 9 days</small></article>
+            <article class="stat-card"><div class="stat-top"><span>ACTIVE</span><span class="stat-icon">●</span></div><strong id="moderation-active">—</strong><small>Currently timed out</small></article>
+            <article class="stat-card"><div class="stat-top"><span>EXPIRED</span><span class="stat-icon">✓</span></div><strong id="moderation-expired">—</strong><small>Timeout ended naturally</small></article>
+            <article class="stat-card"><div class="stat-top"><span>ENDED EARLY</span><span class="stat-icon amber">↶</span></div><strong id="moderation-ended">—</strong><small>Timeout removed before expiry</small></article>
+          </div>
+          <article class="panel moderation-list-panel">
+            <div class="panel-heading moderation-toolbar">
+              <div><h2>Timeout history</h2><p>Only Aegis-authored detection logs with a successful timeout are included.</p></div>
+              <div class="table-tools"><input id="moderation-search" type="search" placeholder="Search user or reason…" aria-label="Search moderation history"><select id="moderation-filter" aria-label="Filter timeout status"><option value="all">All statuses</option><option value="active">Active</option><option value="expired">Expired</option><option value="ended_early">Ended early</option><option value="unknown">Unverified</option></select></div>
+            </div>
+            <div class="table-scroll">
+              <table class="moderation-table">
+                <thead><tr><th>MEMBER</th><th>REASON</th><th>DURATION</th><th>DETECTED</th><th>STATUS</th><th></th></tr></thead>
+                <tbody id="moderation-rows"><tr><td colspan="6" class="muted-cell">Loading moderation history…</td></tr></tbody>
+              </table>
+            </div>
+            <div class="table-foot"><span id="moderation-count">Loading…</span><span id="moderation-source">Discord logging channel</span></div>
+          </article>
+          <article class="panel moderation-detail" id="moderation-detail" hidden>
+            <div class="panel-heading"><div><h2>Incident details</h2><p id="moderation-detail-subtitle">Selected detection record</p></div><button class="button button-secondary" id="moderation-close-detail" type="button">Close</button></div>
+            <div id="moderation-detail-content"></div>
+          </article>
+          <div class="notice moderation-footnote"><span class="notice-mark">i</span><div><strong>How this history works</strong><p>Records are read directly from Aegis's Discord logging channel. The dashboard does not create duplicate moderation records. Historical timeout status is inferred from the member's current Discord timeout and the configured timeout duration.</p></div></div>
+        </section>
         <section class="page" id="page-protection"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / PROTECTION</div><h1>Protection</h1><p>Configure Aegis detection and automated response.</p></div></div><div class="panel placeholder-panel"><span>⬡</span><h2>Protection settings</h2><p>Text and image detection, deletion thresholds, and response controls will live here.</p></div></section>
         <section class="page" id="page-automod"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / AUTOMOD</div><h1>Automod</h1><p>Fine-tune automated moderation for this server.</p></div></div><div class="panel placeholder-panel"><span>⌁</span><h2>Automod rules</h2><p>Custom rules, allowlists, and future server-specific filters will be configured here.</p></div></section>
         <section class="page" id="page-logging"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose where Aegis sends moderation and security events.</p></div></div><div class="panel placeholder-panel"><span>≡</span><h2>Logging configuration</h2><p>Channel selection and event categories will be connected to the bot configuration API.</p></div></section>
