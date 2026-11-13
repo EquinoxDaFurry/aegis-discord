@@ -172,6 +172,20 @@ navigate("selector");
     addField("MESSAGE DELETED", item.deleted ? "Yes" : "No");
     addField("CHANNEL", item.channel_id ? "<#" + item.channel_id + ">" : "Not recorded");
     content.appendChild(grid);
+    if (Array.isArray(item.image_urls) && item.image_urls.length) {
+      const imagePanel = document.createElement("div"); imagePanel.className = "moderation-images";
+      const imageHeading = document.createElement("small"); imageHeading.textContent = item.image_urls.length === 1 ? "DETECTED IMAGE" : "DETECTED IMAGES";
+      imagePanel.appendChild(imageHeading);
+      const imageGrid = document.createElement("div"); imageGrid.className = "moderation-image-grid";
+      item.image_urls.forEach((url, index) => {
+        const link = document.createElement("a"); link.href = url; link.target = "_blank";
+        link.rel = "noopener noreferrer"; link.className = "moderation-image-link";
+        const image = document.createElement("img"); image.src = url; image.alt = "Detected image " + (index + 1);
+        image.loading = "lazy"; image.addEventListener("error", () => { link.remove(); }, { once: true });
+        link.appendChild(image); imageGrid.appendChild(link);
+      });
+      imagePanel.appendChild(imageGrid); content.appendChild(imagePanel);
+    }
     const flagged = document.createElement("div"); flagged.className = "moderation-flagged";
     const label = document.createElement("small"); label.textContent = "FLAGGED CONTENT";
     const body = document.createElement("pre"); body.textContent = item.flagged_content;
