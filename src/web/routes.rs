@@ -28,9 +28,29 @@ struct HealthResponse { status: &'static str, database: &'static str }
 struct DiscordGuild {
     id: String,
     name: String,
+    #[serde(default)]
     icon: Option<String>,
+    #[serde(default)]
     owner: bool,
+    #[serde(default, deserialize_with = "deserialize_permissions")]
     permissions: String,
+}
+
+fn deserialize_permissions<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum PermissionValue {
+        String(String),
+        Number(u64),
+    }
+
+    Ok(match PermissionValue::deserialize(deserializer)? {
+        PermissionValue::String(value) => value,
+        PermissionValue::Number(value) => value.to_string(),
+    })
 }
 
 #[derive(Serialize)]
@@ -211,7 +231,11 @@ async fn oauth_callback(
         tracing::error!(status = %guilds_status, response = %body.chars().take(500).collect::<String>(), "Discord rejected guild-list request");
         return Err(StatusCode::BAD_GATEWAY);
     }
-    let guilds: Vec<DiscordGuild> = guilds_response.json().await.map_err(|error| {
+    let guilds_body = guilds_response.bytes().await.map_err(|error| {
+        tracing::error!(%error, "Could not read Discord guild-list response body");
+        StatusCode::BAD_GATEWAY
+    })?;
+    let guilds: Vec<DiscordGuild> = serde_json::from_slice(&guilds_body).map_err(|error| {
         tracing::error!(%error, "Could not parse Discord guild-list response");
         StatusCode::BAD_GATEWAY
     })?;
