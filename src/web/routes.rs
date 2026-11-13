@@ -519,6 +519,7 @@ async fn moderation(
 struct OwnerCase {
     case_id: String,
     guild_id: String,
+    guild_name: String,
     member_id: String,
     reason: String,
     timeout_until: Option<i64>,
@@ -560,7 +561,7 @@ async fn owner_cases(
     sqlx::query("UPDATE moderation_cases SET status = 'expired' WHERE status = 'active' AND timeout_until IS NOT NULL AND timeout_until <= ?")
         .bind(now()).execute(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let rows = sqlx::query(
-        "SELECT c.case_id, c.guild_id, c.member_id, c.reason, c.timeout_until, c.status, c.created_at, c.original_message_url, r.report_reason, r.reporter_id, r.created_at AS report_created_at FROM moderation_cases c LEFT JOIN false_positive_reports r ON r.case_id = c.case_id WHERE c.status IN ('active', 'expired', 'reversed') ORDER BY c.created_at DESC LIMIT 200"
+        "SELECT c.case_id, c.guild_id, c.guild_name, c.member_id, c.reason, c.timeout_until, c.status, c.created_at, c.original_message_url, r.report_reason, r.reporter_id, r.created_at AS report_created_at FROM moderation_cases c LEFT JOIN false_positive_reports r ON r.case_id = c.case_id WHERE c.status IN ('active', 'expired', 'reversed') ORDER BY c.created_at DESC LIMIT 200"
     ).fetch_all(&state.db).await.map_err(|error| {
         tracing::error!(%error, "Could not load owner moderation cases");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -570,6 +571,7 @@ async fn owner_cases(
         cases.push(OwnerCase {
             case_id: row.try_get("case_id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
             guild_id: row.try_get("guild_id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            guild_name: row.try_get("guild_name").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
             member_id: row.try_get("member_id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
             reason: row.try_get("reason").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
             timeout_until: row.try_get("timeout_until").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
