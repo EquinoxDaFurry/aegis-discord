@@ -80,9 +80,9 @@
             <div class="heading-actions"><span class="status-chip" id="overview-protection-chip"><i></i> Loading protection status</span><button class="button button-secondary" data-page-link="logging">Logging configuration <span>↗</span></button></div>
           </div>
           <div class="notice warning-notice" id="overview-beta-notice" hidden><span class="notice-mark">!</span><div><strong>You are using the Aegis Beta bot</strong><p>This server is currently protected by the beta instance of Aegis. Features and detection behaviour may change during testing.</p></div></div>
-          <div class="notice" id="overview-data-notice"><span class="notice-mark">i</span><div><strong>Bot integration pending</strong><p>Overview statistics are not connected yet. Recent successful timeouts are available in the Moderation tab.</p></div></div>
+          <div class="notice" id="overview-data-notice"><span class="notice-mark">i</span><div><strong>Live server data</strong><p>Overview statistics update from Aegis events and Discord moderation history.</p></div></div>
           <div class="stat-grid">
-            <article class="stat-card"><div class="stat-top"><span>MESSAGES SCANNED</span><span class="stat-icon">▤</span></div><strong id="overview-scanned">—</strong><small id="overview-scanned-note">Available after bot integration</small></article>
+            <article class="stat-card"><div class="stat-top"><span>MESSAGES SCANNED</span><span class="stat-icon">▤</span></div><strong id="overview-scanned">—</strong><small id="overview-scanned-note">Live event totals</small></article>
             <article class="stat-card"><div class="stat-top"><span>THREATS DETECTED</span><span class="stat-icon red">⌁</span></div><strong id="overview-threats">—</strong><small id="overview-threats-note">Available after bot integration</small></article>
             <article class="stat-card"><div class="stat-top"><span>MESSAGES REMOVED</span><span class="stat-icon">⌫</span></div><strong id="overview-removed">—</strong><small id="overview-removed-note">Available after bot integration</small></article>
             <article class="stat-card"><div class="stat-top"><span>ACTIVE TIMEOUTS</span><span class="stat-icon">◷</span></div><strong id="overview-timeouts">—</strong><small id="overview-timeouts-note">Available after bot integration</small></article>
@@ -128,7 +128,7 @@ Your account has been timed out for {duration}.
 Reason: {reason}
 
 If you believe this is a mistake, please submit a false-positive report so the server team can review it.</textarea>
-              <div class="placeholder-box"><strong>AVAILABLE PLACEHOLDERS</strong><div class="placeholder-list"><button type="button" data-placeholder="{user}">{user}</button><button type="button" data-placeholder="{server}">{server}</button><button type="button" data-placeholder="{reason}">{reason}</button><button type="button" data-placeholder="{moderator}">{moderator}</button><button type="button" data-placeholder="{duration}">{duration}</button><button type="button" data-placeholder="{case_id}">{case_id}</button></div><small>Click a placeholder to insert it at your cursor.</small></div>
+              <div class="placeholder-box"><strong>AVAILABLE PLACEHOLDERS</strong><div class="placeholder-list"><button type="button" data-placeholder="{user}">{user}</button><button type="button" data-placeholder="{user_id}">{user_id}</button><button type="button" data-placeholder="{server}">{server}</button><button type="button" data-placeholder="{reason}">{reason}</button><button type="button" data-placeholder="{duration}">{duration}</button><button type="button" data-placeholder="{channel}">{channel}</button><button type="button" data-placeholder="{flagged_content}">{flagged_content}</button><button type="button" data-placeholder="{report_server}">{report_server}</button><button type="button" data-placeholder="{deleted}">{deleted}</button><button type="button" data-placeholder="{timeout_status}">{timeout_status}</button></div><small>Click a placeholder to insert it at your cursor.</small></div>
               <div class="preview-box"><div class="preview-head"><strong>MESSAGE PREVIEW</strong><span>EXAMPLE OUTPUT</span></div><div class="discord-message"><div class="bot-avatar">A</div><div><b>Aegis Oxide <span>APP</span></b><p id="message-preview">Hey @sample_member, Aegis detected content that may be associated with a scam campaign in **Northstar Community**.<br><br>Your account has been timed out for 7 days.<br><br>Reason: Suspicious campaign link<br><br>If you believe this is a mistake, please submit a false-positive report so the server team can review it.</p></div></div></div>
               <div class="editor-footer"><span id="message-status">Unsaved preview changes</span><button class="button button-primary" id="save-message">Save template <span>→</span></button></div>
             </div>
@@ -199,7 +199,7 @@ If you believe this is a mistake, please submit a false-positive report so the s
               <div class="protection-grid">
                 <label class="protection-setting"><span><b>Automatic message deletion</b><small>Delete the detected message.</small></span><input id="protection-delete" type="checkbox"><i class="switch"></i></label>
                 <label class="protection-setting"><span><b>Automatic timeouts</b><small>Temporarily restrict the detected account.</small></span><input id="protection-timeout" type="checkbox"><i class="switch"></i></label>
-                <div class="protection-control"><label for="protection-timeout-days">DEFAULT TIMEOUT DURATION</label><div class="inline-input"><input id="protection-timeout-days" type="number" min="1" max="7" step="1"><span>days</span></div><small>Between 1 and 30 days.</small></div>
+                <div class="protection-control"><label for="protection-timeout-days">DEFAULT TIMEOUT DURATION</label><div class="inline-input"><input id="protection-timeout-days" type="number" min="1" max="7" step="1"><span>days</span></div><small>Between 1 and 7 days.</small></div>
               </div>
             </div>
             <div class="protection-section">
@@ -218,7 +218,7 @@ If you believe this is a mistake, please submit a false-positive report so the s
             </div>
             <div class="protection-save"><span id="protection-status" role="status" aria-live="polite">Loading server settings…</span><button class="button button-primary" type="submit">Save protection settings →</button></div>
           </form>
-          <p class="protection-disclaimer">Settings are saved separately for each server. They will be applied to live Discord moderation during the later bot integration.</p>
+          <p class="protection-disclaimer">Settings are saved separately for each server and applied by the Aegis bot automatically.</p>
         </section>
                 <section class="page" id="page-logging"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose where Aegis sends moderation and security events.</p></div></div><div class="panel placeholder-panel"><span>≡</span><h2>Logging configuration</h2><p>Channel selection and event categories will be connected to the bot configuration API.</p></div></section>
         <section class="page" id="page-analytics">
