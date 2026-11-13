@@ -157,3 +157,5 @@ button.server-card:hover{background:#12161b;border-color:#69404a}
 .analytics-warning{margin-top:12px;padding:12px 14px;border:1px solid #60333b;border-radius:6px;background:#1a1013;color:#e6a2aa;font-size:10px}
 @media(max-width:1000px){.analytics-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:600px){.analytics-toolbar{align-items:flex-start;flex-direction:column}.analytics-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.analytics-chart-panel{padding:14px 10px}.analytics-chart-heading{padding:0 5px}.analytics-axis-label{font-size:9px}}
+
+.owner-reverse-action{margin-left:7px}.table-status.expired{background:rgba(133,137,144,.1);color:#9da1a8;border-color:#3b3e44}.moderation-detail-row{padding:9px 0;border-bottom:1px solid var(--border)}.moderation-detail-row strong{display:block;color:var(--muted);font-family:var(--display);font-size:8px;letter-spacing:.8px}.moderation-detail-row p{margin:5px 0 0;color:var(--text);font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}#owner-detail-content>a{display:inline-block;margin-top:12px;color:#e9a2ac;font-size:10px}
