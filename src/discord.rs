@@ -505,7 +505,7 @@ impl Handler {
         };
         let flagged_text = flagged_content.chars().take(1500).collect::<String>();
         if timeout_status == "Timed out successfully" {
-            let default_dm = "Hello {user_id},\n\n⚠️ **Security Alert**\n\nYour account sent content commonly associated with scam campaigns.\n\nYour account may have been compromised.\n\nPlease:\n\n🔒 Reset your Discord password\n🛡️ Enable Two-Factor Authentication\n🦠 Run malware scans\n🔗 Review Authorized Apps\n\n\nYou have been timed out in:\n\n**{server}**\n\nfor **{duration} days**.\n\n\nDetected location:\n\n{channel}\n\n\nFlagged Content:\n\n```text\n{flagged_content}\n```\n\n\nIf this was a mistake:\n\n{report_server}\n\n\nPlease include:\n- The flagged message\n- What you intended to send\n- Any useful investigation details\n\n\n-# Anti-Scam Protection System";
+            let default_dm = "Hello {user_id},\n\n⚠️ **Security Alert**\n\nYour account sent content commonly associated with scam campaigns.\n\nYour account may have been compromised.\n\nPlease:\n\n🔒 Reset your Discord password\n🛡️ Enable Two-Factor Authentication\n🦠 Run malware scans\n🔗 Review Authorized Apps\n\nYou have been timed out in:\n\n**{server}**\n\nfor **{duration} days**.\n\nDetected location:\n\n{channel}\n\nFlagged Content:\n\n```text\n{flagged_content}\n```\n\n-# Anti-Scam Protection System";
             let dm_text = Self::render_template(settings, "timeout", default_dm,
                 &[("user", message.author.mention().to_string()), ("user_id", format!("<@{}>", message.author.id)),
                   ("server", guild_name.clone()), ("duration", timeout_days.to_string()),
