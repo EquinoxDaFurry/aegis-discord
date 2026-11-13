@@ -207,7 +207,7 @@ impl Handler {
         best.map(|(confidence, reason)| (reason, flagged, confidence))
     }
 
-    async fn send_audit_log(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, timeout_until: Option<i64>, images: Vec<(String, Vec<u8>)>, settings: &serde_json::Value) {
+    async fn send_audit_log(&self, ctx: &Context, message: &Message, guild_name: &str, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, timeout_until: Option<i64>, images: Vec<(String, Vec<u8>)>, settings: &serde_json::Value) {
         let Some(guild_id) = message.guild_id else { return };
         let channels = match guild_id.channels(&ctx.http).await {
             Ok(channels) => channels,
@@ -274,9 +274,9 @@ impl Handler {
             Ok(log_message) => {
                 let created_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
                 let case_status = if timeout_until.is_some() { "active" } else { "failed" };
-                if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, member_id, moderator_id, reason, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, NULL, ?, 'automatic_detection', ?, ?, ?, ?)")
-                    .bind(log_message.id.to_string()).bind(guild_id.to_string()).bind(message.author.id.to_string())
-                    .bind(reason.chars().take(1000).collect::<String>()).bind(timeout_until).bind(case_status)
+                if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, guild_name, member_id, moderator_id, reason, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, ?, NULL, ?, 'automatic_detection', ?, ?, ?, ?)")
+                    .bind(log_message.id.to_string()).bind(guild_id.to_string()).bind(guild_name.chars().take(100).collect::<String>())
+                    .bind(message.author.id.to_string()).bind(reason.chars().take(1000).collect::<String>()).bind(timeout_until).bind(case_status)
                     .bind(created_at).bind(message.link()).execute(&self.analytics_db).await {
                     warn!(%error, case_id = %log_message.id, "Could not persist moderation case for owner console");
                 }
@@ -368,7 +368,7 @@ impl Handler {
             let default_dm = "Hello {user_id},\n\n⚠️ **Security Alert**\n\nYour account sent content commonly associated with scam campaigns.\n\nYour account may have been compromised.\n\nPlease:\n\n🔒 Reset your Discord password\n🛡️ Enable Two-Factor Authentication\n🦠 Run malware scans\n🔗 Review Authorized Apps\n\n\nYou have been timed out in:\n\n**{server}**\n\nfor **{duration} days**.\n\n\nDetected location:\n\n{channel}\n\n\nFlagged Content:\n\n```text\n{flagged_content}\n```\n\n\nIf this was a mistake:\n\n{report_server}\n\n\nPlease include:\n- The flagged message\n- What you intended to send\n- Any useful investigation details\n\n\n-# Anti-Scam Protection System";
             let dm_text = Self::render_template(settings, "timeout", default_dm,
                 &[("user", message.author.mention().to_string()), ("user_id", format!("<@{}>", message.author.id)),
-                  ("server", guild_name), ("duration", timeout_days.to_string()),
+                  ("server", guild_name.clone()), ("duration", timeout_days.to_string()),
                   ("channel", format!("<#{}>", message.channel_id)), ("reason", reason.to_owned()),
                   ("flagged_content", flagged_text), ("report_server", self.config.dm_report_server.clone()),
                   ("deleted", deleted.to_string()), ("timeout_status", timeout_status.clone())], 1900);
@@ -387,7 +387,7 @@ impl Handler {
             Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64
                 + timeout_days.saturating_mul(86_400) as i64)
         } else { None };
-        self.send_audit_log(ctx, message, reason, flagged_content, deleted, &timeout_status, timeout_until, images, settings).await;
+        self.send_audit_log(ctx, message, &guild_name, reason, flagged_content, deleted, &timeout_status, timeout_until, images, settings).await;
     }
 }
 #[async_trait]
