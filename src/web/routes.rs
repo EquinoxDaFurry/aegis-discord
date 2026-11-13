@@ -393,8 +393,9 @@ async fn moderation(
     let runtime = state.runtime_info.read().await.clone().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     let settings_json = sqlx::query_scalar::<_, String>("SELECT config_json FROM guild_configs WHERE guild_id = ?")
         .bind(&guild.id).fetch_optional(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let configured_channel = settings_json.and_then(|json| serde_json::from_str::<ServerSettings>(&json).ok())
-        .and_then(|settings| settings.logging_channel_id);
+    let parsed_settings = settings_json.and_then(|json| serde_json::from_str::<ServerSettings>(&json).ok());
+    let configured_channel = parsed_settings.as_ref().and_then(|settings| settings.logging_channel_id.clone());
+    let guild_timeout_days = parsed_settings.map(|settings| settings.timeout_days as u64).unwrap_or(state.timeout_days).clamp(1, 7);
     let channels_response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/channels", guild.id))
         .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token)).send().await
         .map_err(|error| { tracing::error!(%error, guild_id = %guild.id, "Could not fetch Discord server channels for moderation history"); StatusCode::BAD_GATEWAY })?;
@@ -496,13 +497,13 @@ async fn moderation(
             }
         }
         let (username,avatar_url,live_timeout,member_present) = member_cache.get(&user_id).cloned().unwrap_or_else(|| (user_id.clone(),None,None,false));
-        let expected_until = created_at.saturating_add((state.timeout_days.min(i64::MAX as u64 / 86_400)) as i64 * 86_400);
+        let expected_until = created_at.saturating_add((guild_timeout_days.min(i64::MAX as u64 / 86_400)) as i64 * 86_400);
         let currently_timed_out = live_timeout.is_some();
         let status = (if !member_present { "unknown" } else if currently_timed_out && active_assigned.insert(user_id.clone()) { "active" } else if now() < expected_until { "ended_early" } else { "expired" }).to_owned();
         let timeout_until = if status == "active" { live_timeout } else { Some(expected_until.to_string()) };
         let log_url = format!("https://discord.com/channels/{}/{}/{}", guild.id, log_channel_id, message_id);
         incidents.push(ModerationIncident { id: message_id, user_id, username, avatar_url, reason, flagged_content,
-            confidence, original_confidence, channel_id, deleted, timeout_days: state.timeout_days,
+            confidence, original_confidence, channel_id, deleted, timeout_days: guild_timeout_days,
             timeout_until, status, created_at, log_url });
     }
     incidents.sort_by(|a,b| b.created_at.cmp(&a.created_at));
