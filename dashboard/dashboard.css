@@ -48,3 +48,6 @@ button.server-card:hover{background:#12161b;border-color:#69404a}
 /* Keep selected Discord server icons contained inside the sidebar picker. */
 .server-avatar{overflow:hidden}
 .server-avatar img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:cover;border-radius:inherit}
+
+/* Respect the hidden attribute on notices with explicit flex display. */
+.notice[hidden]{display:none}
