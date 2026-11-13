@@ -12,7 +12,9 @@ async-trait = "0.1"
 dotenvy = "0.15"
 hex = "0.4"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
-regex = "1"\nrand = "0.8"\nurl = "2"
+regex = "1"
+rand = "0.8"
+url = "2"
 fancy-regex = "0.16.2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
