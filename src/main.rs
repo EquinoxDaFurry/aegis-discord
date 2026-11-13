@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     info!("Starting Aegis 2.0 (Rust)");
     let dashboard_bind = config.dashboard_bind.clone();
     let dashboard_database = config.dashboard_database_path.clone();
-    let dashboard_task = tokio::spawn(async move {
+    let mut dashboard_task = tokio::spawn(async move {
         web::run(dashboard_bind, dashboard_database).await
     });
     tokio::select! {
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
             dashboard_task.abort();
             result.context("Discord client stopped")?;
         }
-        result = dashboard_task => {
+        result = &mut dashboard_task => {
             match result {
                 Ok(Ok(())) => anyhow::bail!("Dashboard server exited unexpectedly"),
                 Ok(Err(error)) => return Err(error),
