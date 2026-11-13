@@ -231,11 +231,17 @@ impl Handler {
               ("reason", reason.to_owned()), ("flagged_content", safe_reason.clone()),
               ("channel", channel_mention.clone()), ("deleted", deleted.to_string()),
               ("timeout_status", timeout_status.to_owned())], 3900)
-            .unwrap_or_else(|| "Possible scam content detected.".to_owned());
+            .unwrap_or_else(|| "🚨 Scam Detected\nPossible scam content detected.".to_owned());
         let has_sections = Self::template_section(&detection_text, "User").is_some()
             && Self::template_section(&detection_text, "Reason").is_some();
+        let configured_title = detection_text.lines().next().unwrap_or("🚨 Scam Detected").trim();
+        let embed_title = if configured_title.is_empty() { "🚨 Scam Detected".to_owned() }
+            else if configured_title.contains("Scam Detected") { configured_title.to_owned() }
+            else { format!("{} · Scam Detected", configured_title) };
         let description = if has_sections {
             detection_text.lines().nth(1).unwrap_or("Possible scam content detected.").to_owned()
+        } else if configured_title.contains("Scam Detected") {
+            detection_text.lines().skip(1).collect::<Vec<_>>().join("\n")
         } else { detection_text.clone() };
         let user_field = Self::template_section(&detection_text, "User")
             .unwrap_or_else(|| format!("{}\n`{}`", user_mention, message.author.id));
@@ -246,7 +252,7 @@ impl Handler {
         let deleted_field = Self::template_section(&detection_text, "Deleted").unwrap_or_else(|| deleted.to_string());
         let timeout_field = Self::template_section(&detection_text, "Timeout").unwrap_or_else(|| timeout_status.to_owned());
         let embed = CreateEmbed::new()
-            .title("🚨 Scam Detected")
+            .title(embed_title)
             .description(description)
             .timestamp(Timestamp::now())
             .color(0xED4245)
