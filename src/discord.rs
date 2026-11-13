@@ -657,7 +657,32 @@ impl EventHandler for Handler {
                     let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
                     return;
                 }
-                let Ok(root_id) = component.data.custom_id.trim_start_matches("aegis_fp_reverse:").parse::<u64>() else { return; };
+                let case_id = component.data.custom_id.trim_start_matches("aegis_fp_reverse:");
+                let buttons = CreateActionRow::Buttons(vec![
+                    CreateButton::new(format!("aegis_fp_reverse_confirm:{case_id}"))
+                        .label("Confirm network-wide reversal").style(ButtonStyle::Danger),
+                    CreateButton::new("aegis_fp_reverse_cancel")
+                        .label("Cancel").style(ButtonStyle::Secondary),
+                ]);
+                let response = serenity::all::CreateInteractionResponseMessage::new()
+                    .content("This will remove the Aegis timeout from the original server and every linked server where the timeout is still active and unchanged. Deleted messages will not be restored. Continue?")
+                    .components(vec![buttons]).ephemeral(true);
+                let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+            }
+            Interaction::Component(component) if component.data.custom_id == "aegis_fp_reverse_cancel" => {
+                let response = serenity::all::CreateInteractionResponseMessage::new()
+                    .content("Network-wide reversal cancelled.").ephemeral(true);
+                let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+            }
+            Interaction::Component(component) if component.data.custom_id.starts_with("aegis_fp_reverse_confirm:") => {
+                let owner_id = std::env::var("AEGIS_OWNER_ID").ok().and_then(|value| value.parse::<u64>().ok());
+                if owner_id != Some(component.user.id.get()) {
+                    let response = serenity::all::CreateInteractionResponseMessage::new()
+                        .content("❌ This action is restricted to the bot owner.").ephemeral(true);
+                    let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+                    return;
+                }
+                let Ok(root_id) = component.data.custom_id.trim_start_matches("aegis_fp_reverse_confirm:").parse::<u64>() else { return; };
                 let root = sqlx::query_as::<_, (String, String, String)>(
                     "SELECT guild_id, member_id, original_message_url FROM moderation_cases WHERE case_id = ?"
                 ).bind(root_id.to_string()).fetch_optional(&self.analytics_db).await.ok().flatten();
