@@ -450,7 +450,7 @@ navigate("selector");
     const warning = document.getElementById("owner-warning");
     warning.hidden = true;
     const tbody = document.getElementById("owner-case-rows");
-    tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="muted-cell">Loading owner cases…</td>' }));
+    tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="6" class="muted-cell">Loading owner cases…</td>' }));
     try {
       const data = await api("/api/owner/cases");
       ownerCases = data.cases || [];
@@ -460,7 +460,7 @@ navigate("selector");
       document.getElementById("owner-reversed").textContent = ownerCases.filter(item => item.status === "reversed").length.toLocaleString();
       document.getElementById("owner-active").textContent = ownerCases.filter(item => item.status === "active").length.toLocaleString();
       if (!ownerCases.length) {
-        tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="muted-cell">No persisted timeout cases yet. New Aegis moderation events will appear here.</td>' }));
+        tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="6" class="muted-cell">No persisted timeout cases yet. New Aegis moderation events will appear here.</td>' }));
       } else {
         tbody.replaceChildren(...ownerCases.map(item => {
           const row = document.createElement("tr");
@@ -473,6 +473,7 @@ navigate("selector");
           const server = document.createElement("small"); server.textContent = (item.guild_name || "Server") + " · " + item.guild_id;
           member.append(memberName, server);
           const reason = document.createElement("td"); reason.textContent = item.reason;
+          const detected = document.createElement("td"); detected.textContent = item.created_at ? new Date(item.created_at * 1000).toLocaleString() : "—";
           const expiry = document.createElement("td"); expiry.textContent = item.timeout_until ? new Date(item.timeout_until * 1000).toLocaleString() : "—";
           const status = document.createElement("td");
           const chip = document.createElement("span"); chip.className = "table-status " + statusClass; chip.textContent = label; status.appendChild(chip);
@@ -497,7 +498,7 @@ navigate("selector");
           } else if (item.status === "reversed") {
             const done = document.createElement("span"); done.className = "muted-cell"; done.textContent = "Already reversed"; actions.appendChild(done);
           }
-          row.append(member, reason, expiry, status, actions);
+          row.append(member, reason, detected, expiry, status, actions);
           return row;
         }));
       }
@@ -506,7 +507,7 @@ navigate("selector");
     } catch (error) {
       warning.hidden = false;
       document.getElementById("owner-warning-text").textContent = error.message;
-      tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="muted-cell">Owner case data could not be loaded.</td>' }));
+      tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="6" class="muted-cell">Owner case data could not be loaded.</td>' }));
     }
   }
 
