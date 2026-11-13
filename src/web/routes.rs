@@ -9,7 +9,7 @@ use axum::{
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use std::{net::SocketAddr, time::{SystemTime, UNIX_EPOCH}};
@@ -313,7 +313,9 @@ async fn moderation(
         before = Some(oldest_id);
     }
     let truncated = !reached_cutoff && before.is_some();
-    let mut member_cache: HashMap<String,(String,Option<String>,Option<String>)> = HashMap::new();
+    raw.sort_by(|a, b| b.8.cmp(&a.8));
+    let mut member_cache: HashMap<String,(String,Option<String>,Option<String>,bool)> = HashMap::new();
+    let mut active_assigned: HashSet<String> = HashSet::new();
     let mut incidents = Vec::with_capacity(raw.len());
     for (message_id,user_id,reason,flagged_content,confidence,original_confidence,channel_id,deleted,created_at) in raw {
         if !member_cache.contains_key(&user_id) {
@@ -330,19 +332,20 @@ async fn moderation(
                     .map(|hash| format!("https://cdn.discordapp.com/guilds/{}/users/{}/avatars/{}.png?size=64", guild.id, user_id, hash))
                     .or_else(|| user.get("avatar").and_then(Value::as_str).map(|hash| format!("https://cdn.discordapp.com/avatars/{}/{}.png?size=64", user_id, hash)));
                 let timeout = member.get("communication_disabled_until").and_then(Value::as_str).map(str::to_owned);
-                member_cache.insert(user_id.clone(), (username, avatar, timeout));
+                member_cache.insert(user_id.clone(), (username, avatar, timeout, true));
             } else if response.status() == StatusCode::NOT_FOUND {
-                member_cache.insert(user_id.clone(), (user_id.clone(), None, None));
+                member_cache.insert(user_id.clone(), (user_id.clone(), None, None, false));
             } else {
                 let status = response.status(); let body = response.text().await.unwrap_or_default();
                 tracing::error!(%status, guild_id = %guild.id, user_id = %user_id, response = %body.chars().take(300).collect::<String>(), "Discord rejected member lookup for moderation history");
                 return Err(StatusCode::BAD_GATEWAY);
             }
         }
-        let (username,avatar_url,live_timeout) = member_cache.get(&user_id).cloned().unwrap_or_else(|| (user_id.clone(),None,None));
+        let (username,avatar_url,live_timeout,member_present) = member_cache.get(&user_id).cloned().unwrap_or_else(|| (user_id.clone(),None,None,false));
         let expected_until = created_at.saturating_add((state.timeout_days.min(i64::MAX as u64 / 86_400)) as i64 * 86_400);
-        let status = if live_timeout.is_some() { "active" } else if now() < expected_until { "ended_early" } else { "expired" }.to_owned();
-        let timeout_until = live_timeout.or_else(|| Some(expected_until.to_string()));
+        let currently_timed_out = live_timeout.is_some();
+        let status = if !member_present { "unknown" } else if currently_timed_out && active_assigned.insert(user_id.clone()) { "active" } else if now() < expected_until { "ended_early" } else { "expired" }.to_owned();
+        let timeout_until = if status == "active" { live_timeout } else { Some(expected_until.to_string()) };
         let log_url = format!("https://discord.com/channels/{}/{}/{}", guild.id, log_channel_id, message_id);
         incidents.push(ModerationIncident { id: message_id, user_id, username, avatar_url, reason, flagged_content,
             confidence, original_confidence, channel_id, deleted, timeout_days: state.timeout_days,
