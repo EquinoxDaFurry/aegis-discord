@@ -522,8 +522,7 @@ navigate("selector");
       renderProtectionDropdown("protection-channels-options", data.channels, "#");
       const loggingSelect = document.getElementById("setting-log-channel");
       if (loggingSelect) {
-        const placeholder = new Option("Select a logging channel…", "");
-        placeholder.disabled = true;
+        const placeholder = new Option("Use logging identifier (automatic discovery)", "");
         placeholder.selected = true;
         loggingSelect.replaceChildren(placeholder);
         (data.channels || []).forEach(channel => loggingSelect.add(new Option("#" + channel.name, channel.id)));
