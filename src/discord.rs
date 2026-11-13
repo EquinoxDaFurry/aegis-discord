@@ -655,13 +655,37 @@ impl EventHandler for Handler {
                 let reason = modal.data.components.iter().flat_map(|row| row.components.iter()).find_map(|component| {
                     if let ActionRowComponent::InputText(input) = component { input.value.clone() } else { None }
                 }).unwrap_or_default();
-                let data = self.false_positive_reports.lock().ok().and_then(|reports| reports.get(&log_id).cloned());
+                let cached = self.false_positive_reports.lock().ok().and_then(|reports| reports.get(&log_id).cloned());
+                let data = if let Some(data) = cached { Some(data) } else {
+                    sqlx::query_as::<_, (String, String, String, String, String)>(
+                        "SELECT guild_id, guild_name, member_id, reason, original_message_url FROM moderation_cases WHERE case_id = ?"
+                    ).bind(log_id.to_string()).fetch_optional(&self.analytics_db).await.ok().flatten().and_then(|row| {
+                        let mut parts = row.4.rsplit('/');
+                        let message_id = parts.next()?;
+                        let channel_id = parts.next()?.parse::<u64>().ok()?;
+                        let guild_id = row.0.parse::<u64>().ok()?;
+                        let user_id = row.2.parse::<u64>().ok()?;
+                        Some(FalsePositiveData {
+                            user_mention: format!("<@{user_id}>"), user_id, guild_name: row.1,
+                            guild_id, channel_name: format!("<#{channel_id}>"), reason: row.3,
+                            flagged_content: "Flagged content is unavailable after a bot restart.".to_owned(),
+                            message_url: format!("https://discord.com/channels/{guild_id}/{channel_id}/{message_id}"),
+                            images: Vec::new(),
+                        })
+                    })
+                };
                 let Some(data) = data else {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
                         .content("❌ This detection report is no longer available.").ephemeral(true);
                     let _ = modal.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
                     return;
                 };
+                if is_dm_report && modal.user.id.get() != data.user_id {
+                    let response = serenity::all::CreateInteractionResponseMessage::new()
+                        .content("❌ Only the affected member can submit this report from their timeout DM.").ephemeral(true);
+                    let _ = modal.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+                    return;
+                }
                 let Some(channel_id_value) = self.config.false_positive_channel_id.as_deref() else {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
                         .content("❌ `AEGIS_FALSE_POSITIVE_CHANNEL_ID` is not configured in `.env`.").ephemeral(true);
