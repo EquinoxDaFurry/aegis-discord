@@ -423,7 +423,7 @@ async fn moderation(
     };
     let cutoff = now() - 9 * 86_400;
     let mut before: Option<String> = None;
-    let mut raw: Vec<(String,String,String,String,Option<f64>,Option<f64>,Option<String>,bool,i64,Vec<String>)> = Vec::new();
+    let mut raw: Vec<(String,String,String,String,Option<f64>,Option<f64>,Option<String>,bool,bool,i64,Vec<String>)> = Vec::new();
     let mut reached_cutoff = false;
     for _ in 0..100 {
         let url = format!("https://discord.com/api/v10/channels/{}/messages", log_channel_id);
@@ -452,8 +452,10 @@ async fn moderation(
             if message.get("author").and_then(|a| a.get("id")).and_then(Value::as_str) != Some(runtime.bot_user_id.as_str()) { continue; }
             let Some(embeds) = message.get("embeds").and_then(Value::as_array) else { continue; };
             let Some(embed) = embeds.iter().find(|e| e.get("title").and_then(Value::as_str).is_some_and(|t| t.contains("Scam Detected"))) else { continue; };
-            let Some(timeout) = embed_field(embed, "Timeout") else { continue; };
-            if !timeout.contains("Timed out successfully") { continue; }
+            // A detection is still a moderation incident when Discord rejects the timeout.
+            // Keep the incident and report the timeout outcome separately.
+            let timeout_applied = embed_field(embed, "Timeout")
+                .is_some_and(|timeout| timeout.contains("Timed out successfully"));
             let Some(user_field) = embed_field(embed, "User") else { continue; };
             let Some(user_id) = user_field.split(char::from(96)).nth(1).map(str::to_owned).or_else(|| extract_id(user_field, "<@")) else { continue; };
             let reason = embed_field(embed, "Reason").unwrap_or("Unknown detection reason").to_owned();
@@ -475,7 +477,7 @@ async fn moderation(
                         || url.starts_with("https://media.discordapp.net/attachments/");
                     (trusted_cdn && (content_type.starts_with("image/") || image_extension)).then(|| url.to_owned())
                 }).collect::<Vec<_>>();
-            raw.push((message_id.to_owned(), user_id, reason, flagged, confidence, original_confidence, channel_id, deleted, created_at, image_urls));
+            raw.push((message_id.to_owned(), user_id, reason, flagged, confidence, original_confidence, channel_id, deleted, timeout_applied, created_at, image_urls));
         }
         let Some(oldest_id) = oldest_id else { reached_cutoff = true; break; };
         if snowflake_timestamp(&oldest_id).is_some_and(|t| t < cutoff) || messages.len() < 100 {
@@ -488,7 +490,7 @@ async fn moderation(
     let mut member_cache: HashMap<String,(String,Option<String>,Option<String>,bool)> = HashMap::new();
     let mut active_assigned: HashSet<String> = HashSet::new();
     let mut incidents = Vec::with_capacity(raw.len());
-    for (message_id,user_id,reason,flagged_content,confidence,original_confidence,channel_id,deleted,created_at,image_urls) in raw {
+    for (message_id,user_id,reason,flagged_content,confidence,original_confidence,channel_id,deleted,timeout_applied,created_at,image_urls) in raw {
         if !member_cache.contains_key(&user_id) {
             let response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/members/{}", guild.id, user_id))
                 .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token)).send().await
@@ -515,8 +517,8 @@ async fn moderation(
         let (username,avatar_url,live_timeout,member_present) = member_cache.get(&user_id).cloned().unwrap_or_else(|| (user_id.clone(),None,None,false));
         let expected_until = created_at.saturating_add((guild_timeout_days.min(i64::MAX as u64 / 86_400)) as i64 * 86_400);
         let currently_timed_out = live_timeout.is_some();
-        let status = (if !member_present { "unknown" } else if currently_timed_out && active_assigned.insert(user_id.clone()) { "active" } else if now() < expected_until { "ended_early" } else { "expired" }).to_owned();
-        let timeout_until = if status == "active" { live_timeout } else { Some(expected_until.to_string()) };
+        let status = (if !timeout_applied { "not_applied" } else if !member_present { "unknown" } else if currently_timed_out && active_assigned.insert(user_id.clone()) { "active" } else if now() < expected_until { "ended_early" } else { "expired" }).to_owned();
+        let timeout_until = if !timeout_applied { None } else if status == "active" { live_timeout } else { Some(expected_until.to_string()) };
         let log_url = format!("https://discord.com/channels/{}/{}/{}", guild.id, log_channel_id, message_id);
         incidents.push(ModerationIncident { id: message_id, user_id, username, avatar_url, reason, flagged_content,
             confidence, original_confidence, channel_id, deleted, timeout_days: guild_timeout_days,
