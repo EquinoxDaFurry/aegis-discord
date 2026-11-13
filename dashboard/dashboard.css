@@ -51,3 +51,34 @@ button.server-card:hover{background:#12161b;border-color:#69404a}
 
 /* Respect the hidden attribute on notices with explicit flex display. */
 .notice[hidden]{display:none}
+
+/* Discord-backed moderation history */
+.moderation-stats{margin-bottom:14px}
+.moderation-list-panel{margin-top:0}
+.moderation-toolbar{align-items:flex-start}
+.moderation-toolbar .table-tools{margin-left:auto}
+.moderation-table{min-width:760px}
+.moderation-table td{vertical-align:middle}
+.moderation-member{display:flex;align-items:center;gap:9px;min-width:155px}
+.moderation-avatar{width:32px;height:32px;flex:none;border-radius:50%;object-fit:cover;background:#20242b}
+.moderation-member span{min-width:0}
+.moderation-member b,.moderation-member small{display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.moderation-member b{font-size:10px;font-weight:600}
+.moderation-member small{margin-top:3px;color:var(--muted);font-size:8px}
+.moderation-status{display:inline-block;padding:4px 6px;border:1px solid;border-radius:3px;font-family:var(--display);font-size:7px;letter-spacing:.5px;white-space:nowrap}
+.moderation-status.active{color:#e68a96;border-color:#552a32;background:rgba(224,30,55,.06)}
+.moderation-status.expired{color:#79c99a;border-color:#2d4c3a}
+.moderation-status.ended{color:#e4b86f;border-color:#534326}
+.moderation-status.unknown{color:#a3a8b0;border-color:#41464f}
+.moderation-empty-cell{padding:34px 12px;text-align:center;color:var(--muted);font-size:10px}
+.moderation-detail{margin-top:14px;scroll-margin-top:80px}
+.moderation-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.moderation-detail-field{min-width:0;padding:11px;background:#101216;border:1px solid var(--border);border-radius:5px}
+.moderation-detail-field small,.moderation-flagged>small{display:block;margin-bottom:7px;color:var(--muted);font-family:var(--display);font-size:7px;letter-spacing:.8px}
+.moderation-detail-field div{overflow-wrap:anywhere;color:#e0e1e3;font-size:10px;line-height:1.5}
+.moderation-flagged{margin-top:10px;padding:13px;background:#101216;border:1px solid var(--border);border-radius:5px}
+.moderation-flagged pre{margin:0;color:#d0d2d6;font:10px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.moderation-detail-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.moderation-footnote{margin-top:14px}
+@media(max-width:760px){.moderation-toolbar{flex-direction:column}.moderation-toolbar .table-tools{width:100%;margin:10px 0 0}.moderation-toolbar .table-tools input{width:100%}.moderation-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:430px){.moderation-detail-grid{grid-template-columns:1fr}}
