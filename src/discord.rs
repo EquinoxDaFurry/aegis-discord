@@ -699,7 +699,7 @@ impl EventHandler for Handler {
                     return;
                 };
                 let report = CreateEmbed::new().title("🟡 False Positive Report")
-                    .description("A scam detection was manually marked as a false positive.")
+                    .description(if is_dm_report { "A member reported their timeout as a possible false positive." } else { "A scam detection was manually marked as a false positive." })
                     .timestamp(Timestamp::now())
                     .color(0xF1C40F)
                     .field("User", format!("{}\n`{}`", data.user_mention, data.user_id), false)
@@ -714,6 +714,12 @@ impl EventHandler for Handler {
                 let mut report_message = CreateMessage::new().content(owner_id.map(|id| format!("<@{id}>")).unwrap_or_default()).embed(report);
                 if let Some(owner_id) = owner_id {
                     report_message = report_message.allowed_mentions(serenity::all::CreateAllowedMentions::new().users(vec![UserId::new(owner_id)]));
+                }
+                if is_dm_report {
+                    report_message = report_message.components(vec![CreateActionRow::Buttons(vec![
+                        CreateButton::new(format!("aegis_fp_reverse:{log_id}"))
+                            .label("Reverse all linked timeouts").style(ButtonStyle::Danger)
+                    ])]);
                 }
                 for (filename, bytes) in data.images {
                     report_message = report_message.add_file(CreateAttachment::bytes(bytes, filename));
