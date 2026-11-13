@@ -4,7 +4,7 @@ const breadcrumb = document.getElementById("breadcrumb-current");
 const toast = document.getElementById("toast");
 let toastTimer;
 function showToast(message){toast.textContent=message;toast.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove("show"),3400)}
-function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"})}
+function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));}
 navLinks.forEach(link=>link.addEventListener("click",event=>{event.preventDefault();navigate(link.dataset.page)}));
 document.querySelectorAll("[data-page-link]").forEach(button=>button.addEventListener("click",()=>navigate(button.dataset.pageLink)));
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
@@ -45,7 +45,144 @@ navigate("selector");
   let currentSettings = null;
   let betaBotPresent = false;
   let betaStatusRequest = 0;
+  let moderationData = [];
+  let moderationRequest = 0;
   const settingsPage = document.getElementById("page-settings");
+
+  function formatDate(value) {
+    const date = new Date(Number(value) * 1000);
+    return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleString();
+  }
+  function formatTimeoutUntil(value) {
+    if (!value) return "Unknown";
+    const date = /^\\d+$/.test(value) ? new Date(Number(value) * 1000) : new Date(value);
+    return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
+  }
+  function statusLabel(status) {
+    return ({active:"ACTIVE",expired:"EXPIRED",ended_early:"ENDED EARLY",unknown:"UNVERIFIED"})[status] || "UNKNOWN";
+  }
+  function statusClass(status) {
+    return status === "active" ? "active" : status === "expired" ? "expired" : status === "ended_early" ? "ended" : "unknown";
+  }
+  function renderModerationRows() {
+    const rows = document.getElementById("moderation-rows");
+    if (!rows) return;
+    const query = (document.getElementById("moderation-search")?.value || "").toLowerCase();
+    const filter = document.getElementById("moderation-filter")?.value || "all";
+    const visible = moderationData.filter(item => {
+      const matches = (item.username + " " + item.user_id + " " + item.reason).toLowerCase().includes(query);
+      return matches && (filter === "all" || item.status === filter);
+    });
+    rows.replaceChildren();
+    if (!visible.length) {
+      const tr = document.createElement("tr"), td = document.createElement("td");
+      td.colSpan = 6; td.className = "moderation-empty-cell";
+      td.textContent = moderationData.length ? "No incidents match your search or status filter." : "No successful Aegis timeouts were found in the last 9 days.";
+      tr.appendChild(td); rows.appendChild(tr);
+    } else visible.forEach(item => {
+      const tr = document.createElement("tr");
+      const member = document.createElement("td");
+      const memberWrap = document.createElement("div"); memberWrap.className = "moderation-member";
+      const avatar = document.createElement("img"); avatar.className = "moderation-avatar";
+      avatar.alt = ""; avatar.src = item.avatar_url || "https://cdn.discordapp.com/embed/avatars/0.png";
+      avatar.addEventListener("error", () => { avatar.src = "https://cdn.discordapp.com/embed/avatars/0.png"; }, {once:true});
+      const memberCopy = document.createElement("span");
+      const username = document.createElement("b"); username.textContent = item.username;
+      const userId = document.createElement("small"); userId.textContent = item.user_id;
+      memberCopy.append(username,userId); memberWrap.append(avatar,memberCopy); member.appendChild(memberWrap);
+      const reason = document.createElement("td"); reason.textContent = item.reason;
+      const duration = document.createElement("td"); duration.textContent = item.timeout_days + " days";
+      const detected = document.createElement("td"); detected.textContent = formatDate(item.created_at);
+      const status = document.createElement("td"); const pill = document.createElement("span");
+      pill.className = "moderation-status " + statusClass(item.status); pill.textContent = statusLabel(item.status); status.appendChild(pill);
+      const action = document.createElement("td"); const button = document.createElement("button");
+      button.className = "text-action"; button.type = "button"; button.textContent = "View details";
+      button.addEventListener("click", () => showModerationDetail(item)); action.appendChild(button);
+      tr.append(member,reason,duration,detected,status,action); rows.appendChild(tr);
+    });
+    const count = document.getElementById("moderation-count");
+    if (count) count.textContent = "Showing " + visible.length + " of " + moderationData.length + " incidents";
+  }
+  function showModerationDetail(item) {
+    const panel = document.getElementById("moderation-detail");
+    const content = document.getElementById("moderation-detail-content");
+    if (!panel || !content) return;
+    document.getElementById("moderation-detail-subtitle").textContent = item.username + " · " + formatDate(item.created_at);
+    content.replaceChildren();
+    const grid = document.createElement("div"); grid.className = "moderation-detail-grid";
+    const addField = (label, value, className="") => {
+      const box = document.createElement("div"); box.className = "moderation-detail-field " + className;
+      const name = document.createElement("small"); name.textContent = label;
+      const val = document.createElement("div"); val.textContent = value || "Not available";
+      box.append(name,val); grid.appendChild(box);
+    };
+    addField("MEMBER", item.username + " · " + item.user_id);
+    addField("DETECTION REASON", item.reason);
+    addField("TIMEOUT STATUS", statusLabel(item.status));
+    addField("TIMEOUT DURATION", item.timeout_days + " days");
+    addField("TIMEOUT ENDS", formatTimeoutUntil(item.timeout_until));
+    addField("DETECTED AT", formatDate(item.created_at));
+    addField("CONFIDENCE", item.confidence == null ? "Not included in log" : item.confidence.toFixed(2) + "%");
+    addField("ORIGINAL CONFIDENCE", item.original_confidence == null ? "Not included in log" : item.original_confidence.toFixed(2) + "%");
+    addField("MESSAGE DELETED", item.deleted ? "Yes" : "No");
+    addField("CHANNEL", item.channel_id ? "<#" + item.channel_id + ">" : "Not recorded");
+    content.appendChild(grid);
+    const flagged = document.createElement("div"); flagged.className = "moderation-flagged";
+    const label = document.createElement("small"); label.textContent = "FLAGGED CONTENT";
+    const body = document.createElement("pre"); body.textContent = item.flagged_content;
+    flagged.append(label,body); content.appendChild(flagged);
+    const footer = document.createElement("div"); footer.className = "moderation-detail-actions";
+    const link = document.createElement("a"); link.className = "button button-secondary"; link.href = item.log_url;
+    link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "Open Discord log ↗";
+    footer.appendChild(link); content.appendChild(footer);
+    panel.hidden = false; panel.scrollIntoView({behavior:"smooth",block:"start"});
+  }
+  async function loadModeration() {
+    if (!activeGuild) return;
+    const guildId = activeGuild.id, requestId = ++moderationRequest;
+    const rows = document.getElementById("moderation-rows");
+    const warning = document.getElementById("moderation-warning");
+    const detail = document.getElementById("moderation-detail");
+    if (detail) detail.hidden = true;
+    if (rows) rows.innerHTML = '<tr><td colspan="6" class="muted-cell">Loading moderation history from Discord…</td></tr>';
+    if (warning) warning.hidden = true;
+    try {
+      const data = await api("/api/guilds/" + encodeURIComponent(guildId) + "/moderation");
+      if (requestId !== moderationRequest || activeGuild?.id !== guildId) return;
+      moderationData = data.incidents || [];
+      document.getElementById("moderation-window").textContent = "LAST " + data.lookback_days + " DAYS";
+      const counts = {active:0,expired:0,ended_early:0,unknown:0};
+      moderationData.forEach(item => counts[item.status] = (counts[item.status] || 0) + 1);
+      document.getElementById("moderation-total").textContent = moderationData.length;
+      document.getElementById("moderation-active").textContent = counts.active;
+      document.getElementById("moderation-expired").textContent = counts.expired;
+      document.getElementById("moderation-ended").textContent = counts.ended_early;
+      document.getElementById("moderation-source").textContent = data.logging_channel_id ? "Source: Discord logging channel" : "Logging channel not configured";
+      if (data.warning) {
+        warning.hidden = false;
+        document.getElementById("moderation-warning-title").textContent = "Logging channel not found";
+        document.getElementById("moderation-warning-text").textContent = data.warning;
+      } else if (data.truncated) {
+        warning.hidden = false;
+        document.getElementById("moderation-warning-title").textContent = "History scan limit reached";
+        document.getElementById("moderation-warning-text").textContent = "There are more than 10,000 recent log messages. The list may not include the full 9-day window.";
+      }
+      renderModerationRows();
+    } catch (error) {
+      if (requestId !== moderationRequest) return;
+      moderationData = [];
+      renderModerationRows();
+      warning.hidden = false;
+      document.getElementById("moderation-warning-title").textContent = "Could not load moderation history";
+      document.getElementById("moderation-warning-text").textContent = error.message + ". Check that Aegis can view the logging channel and read its message history.";
+      ["moderation-total","moderation-active","moderation-expired","moderation-ended"].forEach(id => document.getElementById(id).textContent = "—");
+    }
+  }
+  window.addEventListener("aegis:moderation-open", loadModeration);
+  document.getElementById("moderation-refresh")?.addEventListener("click", loadModeration);
+  document.getElementById("moderation-search")?.addEventListener("input", renderModerationRows);
+  document.getElementById("moderation-filter")?.addEventListener("change", renderModerationRows);
+  document.getElementById("moderation-close-detail")?.addEventListener("click", () => { document.getElementById("moderation-detail").hidden = true; });
   const asset = name => "https://aegisdiscord.pages.dev/assets/" + name;
 
   async function api(path, options = {}) {
@@ -267,6 +404,7 @@ navigate("selector");
     navigate("overview");
     loadSettings();
     loadBetaStatus();
+    if (document.getElementById("page-moderation").classList.contains("active")) loadModeration();
   }
 
   async function initialize() {
