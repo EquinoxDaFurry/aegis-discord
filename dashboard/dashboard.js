@@ -275,7 +275,7 @@ navigate("selector");
         <form id="live-settings-form">
           <label class="field-label" style="display:block;margin-bottom:8px"><input id="setting-enabled" type="checkbox" checked> Enable Aegis for this server</label>
           <div style="margin-top:22px"><label class="field-label" for="setting-timeout">DEFAULT TIMEOUT DURATION (DAYS)</label>
-            <input id="setting-timeout" type="number" min="1" max="30" step="1" value="7" style="display:block;width:100%;max-width:220px;padding:12px;background:#0d0f12;color:#f3f3f3;border:1px solid #25282d;border-radius:5px"></div>
+            <input id="setting-timeout" type="number" min="1" max="7" step="1" value="7" style="display:block;width:100%;max-width:220px;padding:12px;background:#0d0f12;color:#f3f3f3;border:1px solid #25282d;border-radius:5px"></div>
           <div style="margin-top:22px"><label class="field-label" for="setting-threshold">IMAGE MATCH CONFIDENCE THRESHOLD</label>
             <input id="setting-threshold" type="number" min="0.5" max="1" step="0.005" value="0.805" style="display:block;width:100%;max-width:220px;padding:12px;background:#0d0f12;color:#f3f3f3;border:1px solid #25282d;border-radius:5px"></div>
           <div style="margin-top:22px"><label class="field-label" for="setting-log-channel">LOGGING CHANNEL ID (OPTIONAL)</label>
