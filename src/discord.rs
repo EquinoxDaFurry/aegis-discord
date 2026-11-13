@@ -57,7 +57,7 @@ impl Handler {
         let hour_start = (SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64).div_euclid(3600) * 3600;
         let result = sqlx::query("INSERT INTO analytics_hourly(guild_id,hour_start,messages,scam_detections,confidence_sum,confidence_count,deleted_messages,timeouts) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(guild_id,hour_start) DO UPDATE SET messages=messages+excluded.messages, scam_detections=scam_detections+excluded.scam_detections, confidence_sum=confidence_sum+excluded.confidence_sum, confidence_count=confidence_count+excluded.confidence_count, deleted_messages=deleted_messages+excluded.deleted_messages, timeouts=timeouts+excluded.timeouts")
             .bind(guild_id.to_string()).bind(hour_start).bind(messages).bind(detections)
-            .bind(confidence.unwrap_or(0.0)).bind(i64::from(confidence.is_some()))
+            .bind(confidence.unwrap_or(0.0)).bind(if confidence.is_some() { 1_i64 } else { 0_i64 })
             .bind(deleted).bind(timeouts).execute(&self.analytics_db).await;
         if let Err(error) = result {
             warn!(%error, guild_id, "Could not update analytics aggregates");
