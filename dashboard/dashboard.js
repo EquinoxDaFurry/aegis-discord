@@ -4,8 +4,8 @@ const breadcrumb = document.getElementById("breadcrumb-current");
 const toast = document.getElementById("toast");
 let toastTimer;
 function showToast(message){toast.textContent=message;toast.classList.add("show");clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove("show"),3400)}
-function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="overview")window.dispatchEvent(new Event("aegis:overview-open"));if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));if(page==="analytics")window.dispatchEvent(new Event("aegis:analytics-open"));}
-navLinks.forEach(link=>link.addEventListener("click",event=>{event.preventDefault();navigate(link.dataset.page)}));
+function navigate(page){const target=document.getElementById("page-"+page);if(!target)return;pages.forEach(p=>p.classList.toggle("active",p===target));navLinks.forEach(link=>link.classList.toggle("active",link.dataset.page===page));const selectorMode=page==="selector";document.body.classList.toggle("selector-mode",selectorMode);breadcrumb.textContent=selectorMode?"Select a server":page==="owner"?"Owner console":page==="account"?"My account":page.charAt(0).toUpperCase()+page.slice(1);history.replaceState(null,"",selectorMode?"#select-server":"#"+page);document.getElementById("sidebar").classList.remove("open");window.scrollTo({top:0,behavior:"smooth"});if(page==="overview")window.dispatchEvent(new Event("aegis:overview-open"));if(page==="moderation")window.dispatchEvent(new Event("aegis:moderation-open"));if(page==="analytics")window.dispatchEvent(new Event("aegis:analytics-open"));if(page==="owner")window.dispatchEvent(new Event("aegis:owner-open"));}
+navLinks.forEach(link=>link.addEventListener("click",event=>{event.preventDefault();if(link.dataset.page==="owner"&&document.body.dataset.isOwner!=="true"){showToast("Owner access required.");return;}navigate(link.dataset.page)}));
 document.querySelectorAll("[data-page-link]").forEach(button=>button.addEventListener("click",()=>navigate(button.dataset.pageLink)));
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
 document.getElementById("server-picker").addEventListener("click",()=>navigate("selector"));
@@ -30,17 +30,15 @@ document.getElementById("save-message").addEventListener("click",()=>window.disp
 const search=document.getElementById("case-search"),filter=document.getElementById("case-filter");
 function filterCases(){const q=(search.value||"").toLowerCase();document.querySelectorAll("#case-rows tr").forEach(row=>{const matches=row.dataset.search.includes(q);const status=filter.value==="all"||row.dataset.status===filter.value;row.classList.toggle("hidden-row",!(matches&&status))})}
 search.addEventListener("input",filterCases);filter.addEventListener("change",filterCases);
-document.querySelectorAll("[data-case-action]").forEach(button=>button.addEventListener("click",()=>showToast("Case review is a UI preview. No timeout has been changed or reversed.")));
+
 document.querySelectorAll(".nav-link").forEach(link=>link.addEventListener("click",()=>{}));
 navigate("selector");
 
 // Discord account, server selection, and per-server dashboard data.
 (async function dashboardBackend() {
   const ownerCard = document.querySelector(".owner-card");
-  if (ownerCard) ownerCard.remove();
-  const ownerNav = document.querySelector('[data-page="owner"]');
-  if (ownerNav) ownerNav.remove();
-
+  let isOwner = false;
+  let ownerCases = [];
   let activeGuild = null;
   let settingsRequest = 0;
   let signedIn = false;
@@ -397,6 +395,125 @@ navigate("selector");
     return response.json();
   }
 
+  function ownerStatusLabel(item) {
+    if (item.status === "reversed") return ["REVERSED", "reversed"];
+    if (item.status === "expired") return ["EXPIRED", "expired"];
+    if (item.report_reason) return ["REPORT RECEIVED", "reported"];
+    return ["ACTIVE", "active"];
+  }
+
+  function filterOwnerCases() {
+    const query = (document.getElementById("owner-case-search")?.value || "").toLowerCase();
+    const filter = document.getElementById("owner-case-filter")?.value || "all";
+    document.querySelectorAll("#owner-case-rows tr[data-search]").forEach(row => {
+      const matches = row.dataset.search.includes(query);
+      const statusMatches = filter === "all" || (filter === "reported" ? row.dataset.reported === "true" : row.dataset.status === filter);
+      row.classList.toggle("hidden-row", !(matches && statusMatches));
+    });
+  }
+
+  function showOwnerCase(item) {
+    const panel = document.getElementById("owner-case-detail");
+    const content = document.getElementById("owner-detail-content");
+    document.getElementById("owner-detail-subtitle").textContent = "Case " + item.case_id + " · Server " + item.guild_id;
+    const addLine = (label, value) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "moderation-detail-row";
+      const heading = document.createElement("strong");
+      heading.textContent = label;
+      const text = document.createElement("p");
+      text.textContent = value || "Not provided";
+      wrapper.append(heading, text);
+      content.appendChild(wrapper);
+    };
+    content.replaceChildren();
+    addLine("Member ID", item.member_id);
+    addLine("Detection reason", item.reason);
+    addLine("False-positive explanation", item.report_reason || "No false-positive report submitted.");
+    addLine("Report submitted by", item.reporter_id || "—");
+    addLine("Case status", item.status);
+    if (item.original_message_url) {
+      const link = document.createElement("a");
+      link.href = item.original_message_url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "Open original Discord message ↗";
+      content.appendChild(link);
+    }
+    panel.hidden = false;
+  }
+
+  async function loadOwnerCases() {
+    if (!isOwner) return;
+    const warning = document.getElementById("owner-warning");
+    warning.hidden = true;
+    const tbody = document.getElementById("owner-case-rows");
+    tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="muted-cell">Loading owner cases…</td>' }));
+    try {
+      const data = await api("/api/owner/cases");
+      ownerCases = data.cases || [];
+      const pending = ownerCases.filter(item => item.report_reason && item.status === "active").length;
+      document.getElementById("owner-total").textContent = ownerCases.length.toLocaleString();
+      document.getElementById("owner-reports").textContent = pending.toLocaleString();
+      document.getElementById("owner-reversed").textContent = ownerCases.filter(item => item.status === "reversed").length.toLocaleString();
+      document.getElementById("owner-active").textContent = ownerCases.filter(item => item.status === "active").length.toLocaleString();
+      if (!ownerCases.length) {
+        tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="muted-cell">No persisted timeout cases yet. New Aegis moderation events will appear here.</td>' }));
+      } else {
+        tbody.replaceChildren(...ownerCases.map(item => {
+          const row = document.createElement("tr");
+          const [label, statusClass] = ownerStatusLabel(item);
+          row.dataset.status = item.status;
+          row.dataset.reported = String(Boolean(item.report_reason));
+          row.dataset.search = [item.member_id, item.guild_id, item.reason, item.report_reason || ""].join(" ").toLowerCase();
+          const member = document.createElement("td");
+          const memberName = document.createElement("b"); memberName.textContent = "Member " + item.member_id;
+          const server = document.createElement("small"); server.textContent = "Server " + item.guild_id;
+          member.append(memberName, server);
+          const reason = document.createElement("td"); reason.textContent = item.reason;
+          const expiry = document.createElement("td"); expiry.textContent = item.timeout_until ? new Date(item.timeout_until * 1000).toLocaleString() : "—";
+          const status = document.createElement("td");
+          const chip = document.createElement("span"); chip.className = "table-status " + statusClass; chip.textContent = label; status.appendChild(chip);
+          const actions = document.createElement("td");
+          const view = document.createElement("button"); view.type = "button"; view.className = "text-action"; view.textContent = "Details";
+          view.addEventListener("click", () => showOwnerCase(item)); actions.appendChild(view);
+          if (item.status === "active" && item.report_reason) {
+            const reverse = document.createElement("button"); reverse.type = "button"; reverse.className = "text-action owner-reverse-action"; reverse.textContent = "Reverse timeout";
+            reverse.addEventListener("click", async () => {
+              const reasonText = window.prompt("Reason for reversing this false-positive timeout (5–500 characters):", "Confirmed false positive");
+              if (reasonText === null) return;
+              try {
+                await api("/api/owner/cases/" + encodeURIComponent(item.case_id) + "/reverse", { method: "POST", body: JSON.stringify({ reason: reasonText }) });
+                showToast("Timeout reversed and audit record saved.");
+                await loadOwnerCases();
+              } catch (error) {
+                showToast("Could not reverse timeout: " + error.message);
+                await loadOwnerCases();
+              }
+            });
+            actions.appendChild(reverse);
+          } else if (item.status === "reversed") {
+            const done = document.createElement("span"); done.className = "muted-cell"; done.textContent = "Already reversed"; actions.appendChild(done);
+          }
+          row.append(member, reason, expiry, status, actions);
+          return row;
+        }));
+      }
+      document.getElementById("owner-case-count").textContent = ownerCases.length + " persisted cases";
+      filterOwnerCases();
+    } catch (error) {
+      warning.hidden = false;
+      document.getElementById("owner-warning-text").textContent = error.message;
+      tbody.replaceChildren(Object.assign(document.createElement("tr"), { innerHTML: '<td colspan="5" class="muted-cell">Owner case data could not be loaded.</td>' }));
+    }
+  }
+
+  document.getElementById("owner-case-search")?.addEventListener("input", filterOwnerCases);
+  document.getElementById("owner-case-filter")?.addEventListener("change", filterOwnerCases);
+  document.getElementById("owner-refresh")?.addEventListener("click", loadOwnerCases);
+  document.getElementById("owner-detail-close")?.addEventListener("click", () => { document.getElementById("owner-case-detail").hidden = true; });
+  window.addEventListener("aegis:owner-open", loadOwnerCases);
+
   function initials(name) {
     return (name || "?").trim().split(/\s+/).filter(Boolean).map(word => Array.from(word)[0]).join("").toUpperCase() || "?";
   }
@@ -741,6 +858,9 @@ navigate("selector");
     try {
       const data = await api("/api/me");
       signedIn = true;
+      isOwner = data.is_owner === true;
+      document.body.dataset.isOwner = String(isOwner);
+      if (ownerCard) ownerCard.style.display = isOwner ? "" : "none";
       const loading = document.getElementById("selector-loading");
       if (loading) loading.hidden = true;
       renderSelector(data.guilds || []);
@@ -759,7 +879,7 @@ navigate("selector");
         }
       }
       document.querySelector(".connection").innerHTML = "<i></i> DISCORD CONNECTED";
-      navigate("selector");
+      navigate(isOwner && location.hash === "#owner" ? "owner" : "selector");
     } catch (error) {
       document.getElementById("selector-loading").hidden = true;
       document.getElementById("selector-signin").hidden = false;
