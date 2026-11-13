@@ -627,7 +627,7 @@ async fn save_settings(
 ) -> Result<Json<SettingsResponse>, StatusCode> {
     let (_, _, _, guilds) = session_user(&headers, &state.db).await?;
     let guild = guilds.iter().find(|g| g.id == guild_id && can_manage(g)).ok_or(StatusCode::FORBIDDEN)?;
-    if !(1..=30).contains(&input.timeout_days) || !input.delete_threshold.is_finite()
+    if !(1..=7).contains(&input.timeout_days) || !input.delete_threshold.is_finite()
         || !(0.5..=1.0).contains(&input.delete_threshold) {
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
