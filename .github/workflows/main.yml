@@ -16,7 +16,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Test Aegis
-        working-directory: rust
         run: cargo test
 
       - name: Build Linux executable
