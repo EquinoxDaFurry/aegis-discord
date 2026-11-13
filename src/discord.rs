@@ -495,14 +495,14 @@ impl Handler {
             Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64
                 + timeout_days.saturating_mul(86_400) as i64)
         } else { None };
-        let case_id = self.send_audit_log(ctx, message, &guild_name, reason, flagged_content, deleted, &timeout_status, timeout_until, images.clone(), settings).await;
-        if timeout_status == "Timed out successfully" {
-            self.record_analytics(guild_id.get(), 0, 0, None, 0, 1).await;
-        }
         let guild_name = match guild_id.to_partial_guild(&ctx.http).await {
             Ok(guild) => guild.name,
             Err(_) => "Unknown server".to_owned(),
         };
+        let case_id = self.send_audit_log(ctx, message, &guild_name, reason, flagged_content, deleted, &timeout_status, timeout_until, images.clone(), settings).await;
+        if timeout_status == "Timed out successfully" {
+            self.record_analytics(guild_id.get(), 0, 0, None, 0, 1).await;
+        }
         let flagged_text = flagged_content.chars().take(1500).collect::<String>();
         if timeout_status == "Timed out successfully" {
             let default_dm = "Hello {user_id},\n\n⚠️ **Security Alert**\n\nYour account sent content commonly associated with scam campaigns.\n\nYour account may have been compromised.\n\nPlease:\n\n🔒 Reset your Discord password\n🛡️ Enable Two-Factor Authentication\n🦠 Run malware scans\n🔗 Review Authorized Apps\n\nYou have been timed out in:\n\n**{server}**\n\nfor **{duration} days**.\n\nDetected location:\n\n{channel}\n\nFlagged Content:\n\n```text\n{flagged_content}\n```\n\n-# Anti-Scam Protection System";
