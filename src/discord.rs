@@ -614,6 +614,14 @@ impl EventHandler for Handler {
                     component.data.custom_id.trim_start_matches("aegis_fp_dm:").parse::<u64>().unwrap_or(0)
                 } else { component.message.id.get() };
                 if log_id == 0 { return; }
+                let report_owner = self.false_positive_reports.lock().ok()
+                    .and_then(|reports| reports.get(&log_id).map(|data| data.user_id));
+                if report_owner != Some(component.user.id.get()) {
+                    let response = serenity::all::CreateInteractionResponseMessage::new()
+                        .content("❌ Only the member involved in this detection can submit this report from their timeout DM.").ephemeral(true);
+                    let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+                    return;
+                }
                 let already = self.false_positive_submitted.lock().map(|s| s.contains(&log_id)).unwrap_or(false);
                 if already {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
