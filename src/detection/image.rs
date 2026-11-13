@@ -1,4 +1,4 @@
-use super::{database::{ImageHashRecord, RuleDatabase}, Detection, DetectionKind};
+use super::database::{ImageHashRecord, RuleDatabase};
 use image::{imageops::FilterType, DynamicImage, GenericImageView, GrayImage, Luma};
 use sha2::{Digest, Sha256};
 use std::{collections::{HashMap, VecDeque}, io::Cursor, sync::RwLock};
@@ -51,7 +51,7 @@ impl ImageDetector {
             let mut limits = image::Limits::default();
             limits.max_image_width = Some(8192);
             limits.max_image_height = Some(8192);
-            limits.max_alloc = 64 * 1024 * 1024;
+            limits.max_alloc = Some(64 * 1024 * 1024);
             reader.limits(limits);
             let decoded = reader.decode()?;
             let (width, height) = decoded.dimensions();
