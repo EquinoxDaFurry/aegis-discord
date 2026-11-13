@@ -8,6 +8,8 @@ use axum::{
 };
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use std::{net::SocketAddr, time::{SystemTime, UNIX_EPOCH}};
@@ -20,6 +22,8 @@ struct AppState {
     oauth_client_secret: String,
     oauth_redirect_uri: String,
     bot_token: String,
+    logging_identifier: String,
+    timeout_days: u64,
     http: reqwest::Client,
     runtime_info: SharedRuntimeInfo,
 }
@@ -181,6 +185,172 @@ async fn beta_status(
     let body = response.text().await.unwrap_or_default();
     tracing::error!(%status, guild_id = %guild.id, response = %body.chars().take(300).collect::<String>(), "Discord beta bot membership check failed");
     Err(StatusCode::BAD_GATEWAY)
+}
+
+
+#[derive(Serialize)]
+struct ModerationResponse {
+    guild_id: String,
+    logging_channel_id: Option<String>,
+    lookback_days: u8,
+    truncated: bool,
+    warning: Option<String>,
+    incidents: Vec<ModerationIncident>,
+}
+#[derive(Serialize)]
+struct ModerationIncident {
+    id: String, user_id: String, username: String, avatar_url: Option<String>,
+    reason: String, flagged_content: String, confidence: Option<f64>,
+    original_confidence: Option<f64>, channel_id: Option<String>, deleted: bool,
+    timeout_days: u64, timeout_until: Option<String>, status: String,
+    created_at: i64, log_url: String,
+}
+fn snowflake_timestamp(id: &str) -> Option<i64> {
+    let value = id.parse::<u64>().ok()?;
+    Some(((value >> 22) + 1_420_070_400_000) as i64 / 1000)
+}
+fn embed_field<'a>(embed: &'a Value, name: &str) -> Option<&'a str> {
+    embed.get("fields")?.as_array()?.iter().find(|field| {
+        field.get("name").and_then(Value::as_str).is_some_and(|n| n.eq_ignore_ascii_case(name))
+    })?.get("value")?.as_str()
+}
+fn extract_id(value: &str, marker: &str) -> Option<String> {
+    let after = value.split_once(marker)?.1;
+    let digits: String = after.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    (!digits.is_empty()).then_some(digits)
+}
+fn extract_percent(value: &str, label: &str) -> Option<f64> {
+    let after = value.split_once(label)?.1.trim_start();
+    let number: String = after.chars().take_while(|ch| ch.is_ascii_digit() || *ch == '.').collect();
+    number.parse().ok()
+}
+fn clean_code_block(value: &str) -> String {
+    let fence = char::from(96).to_string().repeat(3);
+    let prefix = format!("{fence}text");
+    let trimmed = value.trim();
+    let without_start = trimmed.strip_prefix(&prefix).unwrap_or(trimmed).trim();
+    without_start.strip_suffix(&fence).unwrap_or(without_start).trim().to_owned()
+}
+async fn moderation(
+    State(state): State<AppState>, headers: HeaderMap, Path(guild_id): Path<String>,
+) -> Result<Json<ModerationResponse>, StatusCode> {
+    let (_, _, _, guilds) = session_user(&headers, &state.db).await?;
+    let guild = guilds.iter().find(|g| g.id == guild_id && can_manage(g)).ok_or(StatusCode::FORBIDDEN)?;
+    let runtime = state.runtime_info.read().await.clone().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let settings_json = sqlx::query_scalar::<_, String>("SELECT config_json FROM guild_configs WHERE guild_id = ?")
+        .bind(&guild.id).fetch_optional(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let configured_channel = settings_json.and_then(|json| serde_json::from_str::<ServerSettings>(&json).ok())
+        .and_then(|settings| settings.logging_channel_id);
+    let channels_response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/channels", guild.id))
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token)).send().await
+        .map_err(|error| { tracing::error!(%error, guild_id = %guild.id, "Could not fetch Discord server channels for moderation history"); StatusCode::BAD_GATEWAY })?;
+    if !channels_response.status().is_success() {
+        let status = channels_response.status();
+        let body = channels_response.text().await.unwrap_or_default();
+        tracing::error!(%status, guild_id = %guild.id, response = %body.chars().take(300).collect::<String>(), "Discord rejected moderation channel lookup");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let channels: Vec<Value> = channels_response.json().await.map_err(|error| {
+        tracing::error!(%error, guild_id = %guild.id, "Could not parse Discord channel list"); StatusCode::BAD_GATEWAY
+    })?;
+    let log_channel = channels.iter().find(|channel| {
+        let id_matches = configured_channel.as_ref().is_some_and(|id| channel.get("id").and_then(Value::as_str) == Some(id));
+        let topic_matches = channel.get("topic").and_then(Value::as_str).is_some_and(|topic| topic.contains(&state.logging_identifier));
+        if configured_channel.is_some() { id_matches } else { topic_matches }
+    });
+    let Some(log_channel_id) = log_channel.and_then(|c| c.get("id").and_then(Value::as_str)).map(str::to_owned) else {
+        return Ok(Json(ModerationResponse { guild_id, logging_channel_id: None, lookback_days: 9, truncated: false,
+            warning: Some("Aegis could not find this server's logging channel. Configure the Aegis logging channel first.".to_owned()),
+            incidents: Vec::new() }));
+    };
+    let cutoff = now() - 9 * 86_400;
+    let mut before: Option<String> = None;
+    let mut raw: Vec<(String,String,String,String,Option<f64>,Option<f64>,Option<String>,bool,i64)> = Vec::new();
+    let mut reached_cutoff = false;
+    for _ in 0..100 {
+        let url = format!("https://discord.com/api/v10/channels/{}/messages", log_channel_id);
+        let mut request = state.http.get(url).header(header::AUTHORIZATION, format!("Bot {}", state.bot_token));
+        request = if let Some(ref cursor) = before {
+            request.query(&[("limit", "100"), ("before", cursor.as_str())])
+        } else { request.query(&[("limit", "100")]) };
+        let response = request.send().await.map_err(|error| {
+            tracing::error!(%error, guild_id = %guild.id, channel_id = %log_channel_id, "Could not fetch Aegis moderation log history");
+            StatusCode::BAD_GATEWAY
+        })?;
+        if !response.status().is_success() {
+            let status = response.status(); let body = response.text().await.unwrap_or_default();
+            tracing::error!(%status, guild_id = %guild.id, channel_id = %log_channel_id, response = %body.chars().take(300).collect::<String>(), "Discord rejected moderation log history request");
+            return Err(StatusCode::BAD_GATEWAY);
+        }
+        let messages: Vec<Value> = response.json().await.map_err(|error| {
+            tracing::error!(%error, guild_id = %guild.id, "Could not parse moderation log messages"); StatusCode::BAD_GATEWAY
+        })?;
+        if messages.is_empty() { reached_cutoff = true; break; }
+        let oldest_id = messages.last().and_then(|m| m.get("id")).and_then(Value::as_str).map(str::to_owned);
+        for message in &messages {
+            let message_id = message.get("id").and_then(Value::as_str).unwrap_or_default();
+            let Some(created_at) = snowflake_timestamp(message_id) else { continue; };
+            if created_at < cutoff { reached_cutoff = true; continue; }
+            if message.get("author").and_then(|a| a.get("id")).and_then(Value::as_str) != Some(runtime.bot_user_id.as_str()) { continue; }
+            let Some(embeds) = message.get("embeds").and_then(Value::as_array) else { continue; };
+            let Some(embed) = embeds.iter().find(|e| e.get("title").and_then(Value::as_str).is_some_and(|t| t.contains("Scam Detected"))) else { continue; };
+            let Some(timeout) = embed_field(embed, "Timeout") else { continue; };
+            if !timeout.starts_with("Timed out successfully") { continue; }
+            let Some(user_field) = embed_field(embed, "User") else { continue; };
+            let Some(user_id) = user_field.split(char::from(96)).nth(1).map(str::to_owned).or_else(|| extract_id(user_field, "<@")) else { continue; };
+            let reason = embed_field(embed, "Reason").unwrap_or("Unknown detection reason").to_owned();
+            let flagged = clean_code_block(embed_field(embed, "Flagged Content").unwrap_or("No flagged content was included in the log."));
+            let confidence = extract_percent(&flagged, "Confidence:");
+            let original_confidence = extract_percent(&flagged, "Original Confidence:");
+            let channel_id = embed_field(embed, "Channel").and_then(|v| extract_id(v, "<#"));
+            let deleted = embed_field(embed, "Deleted").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"));
+            raw.push((message_id.to_owned(), user_id, reason, flagged, confidence, original_confidence, channel_id, deleted, created_at));
+        }
+        let Some(oldest_id) = oldest_id else { reached_cutoff = true; break; };
+        if snowflake_timestamp(&oldest_id).is_some_and(|t| t < cutoff) || messages.len() < 100 {
+            reached_cutoff = true; break;
+        }
+        before = Some(oldest_id);
+    }
+    let truncated = !reached_cutoff && before.is_some();
+    let mut member_cache: HashMap<String,(String,Option<String>,Option<String>)> = HashMap::new();
+    let mut incidents = Vec::with_capacity(raw.len());
+    for (message_id,user_id,reason,flagged_content,confidence,original_confidence,channel_id,deleted,created_at) in raw {
+        if !member_cache.contains_key(&user_id) {
+            let response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/members/{}", guild.id, user_id))
+                .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token)).send().await
+                .map_err(|error| { tracing::error!(%error, guild_id = %guild.id, user_id = %user_id, "Could not fetch member details for moderation history"); StatusCode::BAD_GATEWAY })?;
+            if response.status().is_success() {
+                let member: Value = response.json().await.map_err(|error| {
+                    tracing::error!(%error, user_id = %user_id, "Could not parse Discord member details"); StatusCode::BAD_GATEWAY
+                })?;
+                let user = member.get("user").unwrap_or(&Value::Null);
+                let username = user.get("global_name").and_then(Value::as_str).or_else(|| user.get("username").and_then(Value::as_str)).unwrap_or(&user_id).to_owned();
+                let avatar = member.get("avatar").and_then(Value::as_str)
+                    .map(|hash| format!("https://cdn.discordapp.com/guilds/{}/users/{}/avatars/{}.png?size=64", guild.id, user_id, hash))
+                    .or_else(|| user.get("avatar").and_then(Value::as_str).map(|hash| format!("https://cdn.discordapp.com/avatars/{}/{}.png?size=64", user_id, hash)));
+                let timeout = member.get("communication_disabled_until").and_then(Value::as_str).map(str::to_owned);
+                member_cache.insert(user_id.clone(), (username, avatar, timeout));
+            } else if response.status() == StatusCode::NOT_FOUND {
+                member_cache.insert(user_id.clone(), (user_id.clone(), None, None));
+            } else {
+                let status = response.status(); let body = response.text().await.unwrap_or_default();
+                tracing::error!(%status, guild_id = %guild.id, user_id = %user_id, response = %body.chars().take(300).collect::<String>(), "Discord rejected member lookup for moderation history");
+                return Err(StatusCode::BAD_GATEWAY);
+            }
+        }
+        let (username,avatar_url,live_timeout) = member_cache.get(&user_id).cloned().unwrap_or_else(|| (user_id.clone(),None,None));
+        let expected_until = created_at.saturating_add((state.timeout_days.min(i64::MAX as u64 / 86_400)) as i64 * 86_400);
+        let status = if live_timeout.is_some() { "active" } else if now() < expected_until { "ended_early" } else { "expired" }.to_owned();
+        let timeout_until = live_timeout.or_else(|| Some(expected_until.to_string()));
+        let log_url = format!("https://discord.com/channels/{}/{}/{}", guild.id, log_channel_id, message_id);
+        incidents.push(ModerationIncident { id: message_id, user_id, username, avatar_url, reason, flagged_content,
+            confidence, original_confidence, channel_id, deleted, timeout_days: state.timeout_days,
+            timeout_until, status, created_at, log_url });
+    }
+    incidents.sort_by(|a,b| b.created_at.cmp(&a.created_at));
+    Ok(Json(ModerationResponse { guild_id, logging_channel_id: Some(log_channel_id), lookback_days: 9,
+        truncated, warning: None, incidents }))
 }
 
 async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse>, StatusCode> {
@@ -349,8 +519,8 @@ async fn save_settings(
     Ok(Json(SettingsResponse { guild_id, settings, updated_at: Some(updated) }))
 }
 
-pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, runtime_info: SharedRuntimeInfo) -> Router {
-    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, http: reqwest::Client::new(), runtime_info };
+pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, logging_identifier: String, timeout_days: u64, runtime_info: SharedRuntimeInfo) -> Router {
+    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, http: reqwest::Client::new(), runtime_info };
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
@@ -360,15 +530,16 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/api/me", get(me))
         .route("/api/runtime", get(get_runtime_info))
         .route("/api/guilds/:guild_id/beta-status", get(beta_status))
+        .route("/api/guilds/:guild_id/moderation", get(moderation))
         .route("/api/guilds/:guild_id/settings", get(get_settings).put(save_settings))
         .nest_service("/", ServeDir::new("dashboard"))
         .with_state(state)
 }
 
-pub async fn serve(bind: &str, db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, runtime_info: SharedRuntimeInfo) -> anyhow::Result<()> {
+pub async fn serve(bind: &str, db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, logging_identifier: String, timeout_days: u64, runtime_info: SharedRuntimeInfo) -> anyhow::Result<()> {
     let address: SocketAddr = bind.parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(%address, "Aegis dashboard server listening");
-    axum::serve(listener, router(db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, runtime_info)).await?;
+    axum::serve(listener, router(db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, runtime_info)).await?;
     Ok(())
 }
