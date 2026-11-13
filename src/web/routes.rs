@@ -56,6 +56,7 @@ struct OAuthToken { access_token: String }
 struct DiscordUser { id: String, username: String, avatar: Option<String> }
 
 #[derive(Serialize, Deserialize)]
+#[serde(default)]
 struct ServerSettings {
     enabled: bool,
     timeout_days: u8,
@@ -125,7 +126,7 @@ async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse>, S
     Ok(Json(HealthResponse { status: "ok", database: "ok" }))
 }
 
-async fn login(State(state): State<AppState>) -> Result<Redirect, StatusCode> {
+async fn login(State(state): State<AppState>) -> Result<Response, StatusCode> {
     if state.oauth_client_id.is_empty() || state.oauth_client_secret.is_empty() || state.oauth_redirect_uri.is_empty() {
         return Err(StatusCode::SERVICE_UNAVAILABLE);
     }
@@ -142,13 +143,19 @@ async fn login(State(state): State<AppState>) -> Result<Redirect, StatusCode> {
         .append_pair("response_type", "code")
         .append_pair("scope", "identify guilds")
         .append_pair("state", &state_token);
-    Ok(Redirect::temporary(url.as_str()))
+    let mut response = Redirect::temporary(url.as_str()).into_response();
+    let cookie = format!("aegis_oauth_state={}; Path=/auth/callback; HttpOnly; SameSite=Lax; Max-Age=600", state_token);
+    response.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&cookie).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?);
+    Ok(response)
 }
 
 async fn oauth_callback(
     State(state): State<AppState>,
     Query(query): Query<OAuthCallback>,
+    headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
+    let browser_state = cookie_value(&headers, "aegis_oauth_state").ok_or(StatusCode::BAD_REQUEST)?;
+    if browser_state != query.state { return Err(StatusCode::BAD_REQUEST); }
     let valid = sqlx::query("DELETE FROM dashboard_oauth_states WHERE state_hash = ? AND expires_at > ?")
         .bind(digest(&query.state)).bind(now()).execute(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.rows_affected() == 1;
@@ -180,13 +187,14 @@ async fn oauth_callback(
     let avatar = user.avatar.clone();
     let guilds_json = serde_json::to_string(&guilds).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     sqlx::query("INSERT INTO dashboard_sessions(token_hash, discord_user_id, expires_at, created_at, username, avatar, guilds_json) VALUES(?, ?, ?, ?, ?, ?, ?)")
-        .bind(digest(&session)).bind(&user.id).bind(now() + 7 * 24 * 60 * 60).bind(now())
+        .bind(digest(&session)).bind(&user.id).bind(now() + 60 * 60).bind(now())
         .bind(&user.username).bind(&avatar).bind(guilds_json).execute(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut response = Redirect::to("/#overview").into_response();
-    let cookie = format!("aegis_session={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800", session);
+    let cookie = format!("aegis_session={}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600", session);
     response.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&cookie).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?);
+    response.headers_mut().append(header::SET_COOKIE, HeaderValue::from_static("aegis_oauth_state=; Path=/auth/callback; HttpOnly; SameSite=Lax; Max-Age=0"));
     Ok(response)
 }
 
