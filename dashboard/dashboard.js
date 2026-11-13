@@ -287,13 +287,45 @@ navigate("selector");
     document.getElementById("live-settings-form").addEventListener("submit", saveSettings);
   }
 
-  function selectedValues(select) {
-    return [...select.selectedOptions].map(option => option.value);
+  function selectedValues(optionsId) {
+    return [...document.querySelectorAll("#" + optionsId + " input[type=checkbox]:checked")].map(input => input.value);
   }
 
-  function setMultiSelect(select, values) {
+  function setMultiSelect(optionsId, values) {
     const selected = new Set(values || []);
-    [...select.options].forEach(option => { option.selected = selected.has(option.value); });
+    document.querySelectorAll("#" + optionsId + " input[type=checkbox]").forEach(input => {
+      input.checked = selected.has(input.value);
+    });
+    updateProtectionDropdown(optionsId);
+  }
+
+  function updateProtectionDropdown(optionsId) {
+    const isRoles = optionsId === "protection-roles-options";
+    const label = isRoles ? "roles" : "channels";
+    const summary = document.getElementById(isRoles ? "protection-roles-summary" : "protection-channels-summary");
+    if (!summary) return;
+    const checked = selectedValues(optionsId);
+    summary.textContent = checked.length ? checked.length + " " + label + " selected" : "Choose " + label;
+  }
+
+  function renderProtectionDropdown(optionsId, items, prefix = "") {
+    const container = document.getElementById(optionsId);
+    if (!items.length) {
+      container.replaceChildren(Object.assign(document.createElement("p"), { className: "dropdown-empty", textContent: "Nothing available." }));
+      return;
+    }
+    container.replaceChildren(...items.map(item => {
+      const label = document.createElement("label");
+      label.className = "protection-dropdown-option";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = item.id;
+      checkbox.addEventListener("change", () => updateProtectionDropdown(optionsId));
+      const name = document.createElement("span");
+      name.textContent = prefix + item.name;
+      label.append(checkbox, name);
+      return label;
+    }));
   }
 
   async function loadProtectionOptions() {
@@ -301,13 +333,11 @@ navigate("selector");
     const status = document.getElementById("protection-status");
     try {
       const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/protection-options");
-      const roles = document.getElementById("protection-roles");
-      const channels = document.getElementById("protection-channels");
-      roles.replaceChildren(...data.roles.map(item => new Option(item.name, item.id)));
-      channels.replaceChildren(...data.channels.map(item => new Option("#" + item.name, item.id)));
+      renderProtectionDropdown("protection-roles-options", data.roles);
+      renderProtectionDropdown("protection-channels-options", data.channels, "#");
       if (currentSettings) {
-        setMultiSelect(roles, currentSettings.exempt_role_ids);
-        setMultiSelect(channels, currentSettings.ignored_channel_ids);
+        setMultiSelect("protection-roles-options", currentSettings.exempt_role_ids);
+        setMultiSelect("protection-channels-options", currentSettings.ignored_channel_ids);
       }
     } catch (error) {
       if (status) status.textContent = "Could not load Discord roles/channels: " + error.message;
@@ -336,9 +366,9 @@ navigate("selector");
       document.getElementById("protection-threshold-value").textContent = (Number(settings.delete_threshold) * 100).toFixed(1) + "%";
     }
     const timeout = document.getElementById("protection-timeout-days");
-    if (timeout) timeout.value = settings.timeout_days;
-    setMultiSelect(document.getElementById("protection-roles"), settings.exempt_role_ids);
-    setMultiSelect(document.getElementById("protection-channels"), settings.ignored_channel_ids);
+    if (timeout) timeout.value = Math.min(7, Math.max(1, Number(settings.timeout_days) || 7));
+    setMultiSelect("protection-roles-options", settings.exempt_role_ids);
+    setMultiSelect("protection-channels-options", settings.ignored_channel_ids);
   }
 
   function protectionPayload() {
@@ -351,11 +381,11 @@ navigate("selector");
       delete_threshold: Number(document.getElementById("protection-threshold").value),
       auto_delete: document.getElementById("protection-delete").checked,
       auto_timeout: document.getElementById("protection-timeout").checked,
-      timeout_days: Number(document.getElementById("protection-timeout-days").value),
+      timeout_days: Math.min(7, Math.max(1, Number(document.getElementById("protection-timeout-days").value))),
       dry_run: document.getElementById("protection-dry-run").checked,
       exempt_admins: document.getElementById("protection-admins").checked,
-      exempt_role_ids: selectedValues(document.getElementById("protection-roles")),
-      ignored_channel_ids: selectedValues(document.getElementById("protection-channels")),
+      exempt_role_ids: selectedValues("protection-roles-options"),
+      ignored_channel_ids: selectedValues("protection-channels-options"),
       logging_channel_id: base.logging_channel_id || null
     };
   }
@@ -392,7 +422,7 @@ navigate("selector");
       const enabled = document.getElementById("setting-enabled");
       if (enabled) enabled.checked = data.settings.enabled;
       const timeout = document.getElementById("setting-timeout");
-      if (timeout) timeout.value = data.settings.timeout_days;
+      if (timeout) timeout.value = Math.min(7, Math.max(1, Number(data.settings.timeout_days) || 7));
       const threshold = document.getElementById("setting-threshold");
       if (threshold) threshold.value = data.settings.delete_threshold;
       const channel = document.getElementById("setting-log-channel");
@@ -415,7 +445,7 @@ navigate("selector");
     const payload = {
       ...(currentSettings || {}),
       enabled: document.getElementById("setting-enabled").checked,
-      timeout_days: Number(document.getElementById("setting-timeout").value),
+      timeout_days: Math.min(7, Math.max(1, Number(document.getElementById("setting-timeout").value))),
       delete_threshold: Number(document.getElementById("setting-threshold").value),
       logging_channel_id: document.getElementById("setting-log-channel").value.trim() || null
     };
