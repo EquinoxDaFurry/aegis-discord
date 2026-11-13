@@ -203,7 +203,7 @@ navigate("selector");
             const row = document.createElement("div");
             row.className = "activity-row";
             const marker = document.createElement("span");
-            marker.className = "activity-marker";
+            marker.className = "event-symbol red";
             marker.textContent = "!";
             const copy = document.createElement("div");
             copy.className = "activity-copy";
