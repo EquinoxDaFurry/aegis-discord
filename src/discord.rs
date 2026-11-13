@@ -205,7 +205,7 @@ impl Handler {
             }
         };
         let Some(guild_id) = message.guild_id else { return };
-        self.record_analytics(guild_id.get(), 0, 1, confidence, i64::from(deleted), 0).await;
+        self.record_analytics(guild_id.get(), 0, 1, confidence.map(|score| score.clamp(0.0, 1.0)), if deleted { 1 } else { 0 }, 0).await;
         if self.on_cooldown(guild_id.get(), message.author.id.get()) { return; }
 
         let timeout_status = match guild_id.member(&ctx.http, message.author.id).await {
