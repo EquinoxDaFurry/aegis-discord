@@ -533,8 +533,12 @@ navigate("selector");
         setMultiSelect("protection-roles-options", currentSettings.exempt_role_ids);
         setMultiSelect("protection-channels-options", currentSettings.ignored_channel_ids);
       }
+      return true;
     } catch (error) {
       if (status) status.textContent = "Could not load Discord roles/channels: " + error.message;
+      const loggingStatus = document.getElementById("live-settings-status");
+      if (loggingStatus) loggingStatus.textContent = "Could not load channels: " + error.message;
+      return false;
     }
   }
 
@@ -611,13 +615,13 @@ navigate("selector");
       const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings");
       currentSettings = data.settings;
       populateMessageTemplates(data.settings);
-      await loadProtectionOptions();
+      const optionsLoaded = await loadProtectionOptions();
       const channel = document.getElementById("setting-log-channel");
       if (channel) channel.value = data.settings.logging_channel_id || "";
       populateProtectionForm(data.settings);
-      if (status) status.textContent = data.updated_at ? "Saved settings loaded" : "Default settings · not saved yet";
+      if (status) status.textContent = optionsLoaded ? (data.updated_at ? "Saved settings loaded" : "Default settings · not saved yet") : "Channel options unavailable";
       const protectionStatus = document.getElementById("protection-status");
-      if (protectionStatus) protectionStatus.textContent = data.updated_at ? "Saved settings loaded" : "Default settings · not saved yet";
+      if (protectionStatus) protectionStatus.textContent = optionsLoaded ? (data.updated_at ? "Saved settings loaded" : "Default settings · not saved yet") : "Role/channel options unavailable";
       renderOverview();
     } catch (error) {
       if (status) status.textContent = error.message;
