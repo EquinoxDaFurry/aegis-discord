@@ -301,6 +301,119 @@ impl Handler {
         }
     }
 
+    async fn propagate_cross_server_detection(
+        &self, ctx: &Context, source_message: &Message, source_reason: &str,
+        flagged_content: &str, confidence: Option<f64>, source_settings: &serde_json::Value,
+    ) {
+        let Some(source_guild_id) = source_message.guild_id else { return; };
+        if !Self::setting_bool(source_settings, "cross_server_intelligence", true)
+            || Self::setting_bool(source_settings, "dry_run", false) { return; }
+        let user_id = source_message.author.id;
+        let source_guild_name = source_guild_id.to_partial_guild(&ctx.http).await
+            .map(|guild| guild.name).unwrap_or_else(|_| "Unknown server".to_owned());
+        let confidence_text = confidence.map(|value| format!("{:.2}%", value.clamp(0.0, 1.0) * 100.0))
+            .unwrap_or_else(|| "Not available (text rule match)".to_owned());
+        for target_guild_id in ctx.cache.guilds() {
+            if target_guild_id == source_guild_id { continue; }
+            let target_settings = self.guild_settings(target_guild_id.get()).await;
+            if !Self::setting_bool(&target_settings, "enabled", true)
+                || !Self::setting_bool(&target_settings, "cross_server_intelligence", true)
+                || !Self::setting_bool(&target_settings, "auto_timeout", true)
+                || Self::setting_bool(&target_settings, "dry_run", false) { continue; }
+            let reserved = sqlx::query("INSERT OR IGNORE INTO cross_server_actions(source_guild_id, target_guild_id, member_id, source_message_id, created_at) VALUES(?, ?, ?, ?, ?)")
+                .bind(source_guild_id.get().to_string()).bind(target_guild_id.get().to_string())
+                .bind(user_id.get().to_string()).bind(source_message.id.get().to_string())
+                .bind(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
+                .execute(&self.analytics_db).await;
+            match reserved {
+                Ok(result) if result.rows_affected() == 0 => continue,
+                Ok(_) => {},
+                Err(error) => { warn!(%error, target_guild_id = %target_guild_id, "Could not reserve cross-server action"); continue; }
+            }
+            let mut member = match target_guild_id.member(&ctx.http, user_id).await {
+                Ok(member) => member,
+                Err(_) => continue,
+            };
+            let target_guild = ctx.cache.guild(target_guild_id);
+            if Self::setting_bool(&target_settings, "exempt_admins", true)
+                && target_guild.as_ref().is_some_and(|guild| guild.member_permissions(&member).administrator()) { continue; }
+            if target_settings.get("exempt_role_ids").and_then(serde_json::Value::as_array).is_some_and(|roles| {
+                member.roles.iter().any(|role| {
+                    let id = role.get().to_string();
+                    roles.iter().any(|item| item.as_str() == Some(id.as_str()))
+                })
+            }) { continue; }
+            let days = target_settings.get("timeout_days").and_then(serde_json::Value::as_u64)
+                .unwrap_or(self.config.timeout_days).clamp(1, 7);
+            let until = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+                .saturating_add(days.saturating_mul(86_400));
+            let (timeout_status, timeout_until) = match Timestamp::from_unix_timestamp(until as i64) {
+                Ok(timestamp) => match member.disable_communication_until_datetime(&ctx.http, timestamp).await {
+                    Ok(_) => ("Timed out successfully".to_owned(), Some(until as i64)),
+                    Err(error) => {
+                        warn!(%error, target_guild_id = %target_guild_id, user_id = %user_id, "Cross-server timeout failed");
+                        ("Unable to timeout user (permissions or role hierarchy)".to_owned(), None)
+                    }
+                },
+                Err(error) => ("Unable to calculate timeout expiry".to_owned(), {
+                    warn!(%error, "Could not calculate cross-server timeout expiry"); None
+                }),
+            };
+            if timeout_until.is_some() { self.record_analytics(target_guild_id.get(), 0, 0, None, 0, 1).await; }
+            let channels = match target_guild_id.channels(&ctx.http).await {
+                Ok(channels) => channels,
+                Err(error) => { warn!(%error, target_guild_id = %target_guild_id, "Could not list destination logging channels"); continue; }
+            };
+            let configured = target_settings.get("logging_channel_id").and_then(serde_json::Value::as_str)
+                .and_then(|id| id.parse::<u64>().ok()).map(serenity::all::ChannelId::new);
+            let channel = configured.and_then(|id| channels.get(&id))
+                .or_else(|| channels.values().find(|channel| channel.topic.as_deref()
+                    .is_some_and(|topic| topic.contains(&self.config.logging_identifier))));
+            let Some(channel) = channel else {
+                warn!(target_guild_id = %target_guild_id, "No logging channel found for cross-server action"); continue;
+            };
+            let target_name = target_guild.as_ref().map(|guild| guild.name.clone())
+                .or_else(|| None).unwrap_or_else(|| "Unknown server".to_owned());
+            let safe_flagged = flagged_content.chars().take(1200).collect::<String>();
+            let embed = CreateEmbed::new().title("Cross Server Intelligence Network")
+                .description(format!("Aegis detected a threat in {} and applied a network action in {}.", source_guild_name, target_name))
+                .timestamp(Timestamp::now()).color(0xED4245)
+                .field("User", format!("{}\n`{}`", user_id.mention(), user_id), false)
+                .field("Reason", "Cross Server Intelligence Network", false)
+                .field("Source Detection", source_reason.chars().take(500).collect::<String>(), true)
+                .field("Confidence", confidence_text.clone(), true)
+                .field("Flagged Content", safe_flagged.chars().take(1000).collect::<String>(), false)
+                .field("Source Server", format!("{}\n`{}`", source_guild_name, source_guild_id), false)
+                .field("Original Message", source_message.link(), false)
+                .field("Timeout", format!("{}{}", timeout_status, timeout_until.map(|_| format!(" ({} days)", days)).unwrap_or_default()), false);
+            let button = CreateButton::new("aegis_false_positive").label("False Positive").emoji('⚠').style(ButtonStyle::Secondary);
+            match channel.send_message(&ctx.http, CreateMessage::new().embed(embed)
+                .components(vec![CreateActionRow::Buttons(vec![button])])).await {
+                Ok(log_message) => {
+                    let created_at = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+                    let status = if timeout_until.is_some() { "active" } else { "failed" };
+                    if let Err(error) = sqlx::query("INSERT OR IGNORE INTO moderation_cases(case_id, guild_id, guild_name, member_id, moderator_id, reason, source, timeout_until, status, created_at, original_message_url) VALUES(?, ?, ?, ?, NULL, ?, 'cross_server_intelligence', ?, ?, ?, ?)")
+                        .bind(log_message.id.get().to_string()).bind(target_guild_id.get().to_string())
+                        .bind(target_name.chars().take(100).collect::<String>()).bind(user_id.get().to_string())
+                        .bind("Cross Server Intelligence Network").bind(timeout_until).bind(status)
+                        .bind(created_at).bind(source_message.link()).execute(&self.analytics_db).await {
+                        warn!(%error, "Could not persist cross-server moderation case");
+                    }
+                    if let Ok(mut reports) = self.false_positive_reports.lock() {
+                        reports.insert(log_message.id.get(), FalsePositiveData {
+                            user_mention: user_id.mention().to_string(), user_id: user_id.get(),
+                            guild_name: target_name, guild_id: target_guild_id.get(),
+                            channel_name: channel.id.mention().to_string(),
+                            reason: "Cross Server Intelligence Network".to_owned(),
+                            flagged_content: safe_flagged, message_url: source_message.link(), images: Vec::new(),
+                        });
+                    }
+                }
+                Err(error) => warn!(%error, target_guild_id = %target_guild_id, "Could not send cross-server audit log"),
+            }
+        }
+    }
+
     async fn handle_detection(&self, ctx: &Context, message: &Message, reason: &str, flagged_content: &str, images: Vec<(String, Vec<u8>)>, confidence: Option<f64>, settings: &serde_json::Value) {
         self.threats_since_heartbeat.fetch_add(1, Ordering::Relaxed);
         let Some(guild_id) = message.guild_id else { return };
@@ -388,6 +501,7 @@ impl Handler {
                 + timeout_days.saturating_mul(86_400) as i64)
         } else { None };
         self.send_audit_log(ctx, message, &guild_name, reason, flagged_content, deleted, &timeout_status, timeout_until, images, settings).await;
+        self.propagate_cross_server_detection(ctx, message, reason, flagged_content, confidence, settings).await;
     }
 }
 #[async_trait]
