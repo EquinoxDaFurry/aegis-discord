@@ -545,6 +545,12 @@ struct OwnerCase {
 }
 
 #[derive(Serialize)]
+struct OwnerCaseDetails {
+    flagged_content: String,
+    image_urls: Vec<String>,
+}
+
+#[derive(Serialize)]
 struct OwnerCasesResponse { cases: Vec<OwnerCase> }
 
 #[derive(Deserialize)]
@@ -599,6 +605,53 @@ async fn owner_cases(
     Ok(Json(OwnerCasesResponse { cases }))
 }
 
+async fn owner_case_details(
+    State(state): State<AppState>, headers: HeaderMap, Path(case_id): Path<String>,
+) -> Result<Json<OwnerCaseDetails>, StatusCode> {
+    let (user_id, _, _, _) = session_user(&headers, &state.db).await?;
+    require_owner(&user_id, &state)?;
+    let guild_id = sqlx::query_scalar::<_, String>("SELECT guild_id FROM moderation_cases WHERE case_id = ?")
+        .bind(&case_id).fetch_optional(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(StatusCode::NOT_FOUND)?;
+    let settings_json = sqlx::query_scalar::<_, String>("SELECT config_json FROM guild_configs WHERE guild_id = ?")
+        .bind(&guild_id).fetch_optional(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let configured_channel = settings_json
+        .and_then(|json| serde_json::from_str::<ServerSettings>(&json).ok())
+        .and_then(|settings| settings.logging_channel_id);
+    let channels_response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/channels", guild_id))
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
+        .send().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    if !channels_response.status().is_success() { return Err(StatusCode::BAD_GATEWAY); }
+    let channels: Vec<Value> = channels_response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let log_channel = configured_channel.as_ref()
+        .and_then(|id| channels.iter().find(|channel| channel.get("id").and_then(Value::as_str) == Some(id)))
+        .or_else(|| channels.iter().find(|channel| channel.get("topic").and_then(Value::as_str)
+            .is_some_and(|topic| topic.contains(&state.logging_identifier))));
+    let channel_id = log_channel.and_then(|channel| channel.get("id").and_then(Value::as_str))
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let response = state.http.get(format!("https://discord.com/api/v10/channels/{}/messages/{}", channel_id, case_id))
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
+        .send().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    if !response.status().is_success() { return Err(StatusCode::NOT_FOUND); }
+    let message: Value = response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let embed = message.get("embeds").and_then(Value::as_array).into_iter().flatten()
+        .find(|embed| embed.get("title").and_then(Value::as_str).is_some_and(|title| title.contains("Scam Detected")));
+    let flagged_content = embed.and_then(|embed| embed_field(embed, "Flagged Content"))
+        .map(clean_code_block).unwrap_or_else(|| "Flagged content is unavailable in the stored Discord audit message.".to_owned());
+    let image_urls = message.get("attachments").and_then(Value::as_array).into_iter().flatten()
+        .filter_map(|attachment| {
+            let url = attachment.get("url").and_then(Value::as_str)?;
+            let filename = attachment.get("filename").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
+            let content_type = attachment.get("content_type").and_then(Value::as_str).unwrap_or_default();
+            let image_extension = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".avif"]
+                .iter().any(|extension| filename.ends_with(extension));
+            let trusted_cdn = url.starts_with("https://cdn.discordapp.com/attachments/")
+                || url.starts_with("https://media.discordapp.net/attachments/");
+            (trusted_cdn && (content_type.starts_with("image/") || image_extension)).then(|| url.to_owned())
+        }).collect();
+    Ok(Json(OwnerCaseDetails { flagged_content, image_urls }))
+}
+
 async fn reverse_owner_case(
     State(state): State<AppState>, headers: HeaderMap, Path(case_id): Path<String>,
     Json(input): Json<ReverseCaseInput>,
@@ -614,10 +667,6 @@ async fn reverse_owner_case(
     ).bind(&case_id).fetch_optional(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(StatusCode::NOT_FOUND)?;
     if case.3 != "active" { return Err(StatusCode::CONFLICT); }
-    let pending_report = sqlx::query("SELECT 1 FROM false_positive_reports WHERE case_id = ? AND status = 'pending'")
-        .bind(&case_id).fetch_optional(&state.db).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.is_some();
-    if !pending_report { return Err(StatusCode::FORBIDDEN); }
     if sqlx::query("SELECT 1 FROM moderation_reversals WHERE case_id = ?")
         .bind(&case_id).fetch_optional(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.is_some() {
@@ -1051,6 +1100,7 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/auth/logout", post(logout))
         .route("/api/me", get(me))
         .route("/api/owner/cases", get(owner_cases))
+        .route("/api/owner/cases/:case_id", get(owner_case_details))
         .route("/api/owner/cases/:case_id/reverse", post(reverse_owner_case))
         .route("/api/runtime", get(get_runtime_info))
         .route("/api/guilds/:guild_id/beta-status", get(beta_status))
