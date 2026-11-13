@@ -415,7 +415,7 @@ navigate("selector");
   function showOwnerCase(item) {
     const panel = document.getElementById("owner-case-detail");
     const content = document.getElementById("owner-detail-content");
-    document.getElementById("owner-detail-subtitle").textContent = "Case " + item.case_id + " · Server " + item.guild_id;
+    document.getElementById("owner-detail-subtitle").textContent = "Case " + item.case_id + " · " + (item.guild_name || "Server " + item.guild_id);
     const addLine = (label, value) => {
       const wrapper = document.createElement("div");
       wrapper.className = "moderation-detail-row";
@@ -465,10 +465,10 @@ navigate("selector");
           const [label, statusClass] = ownerStatusLabel(item);
           row.dataset.status = item.status;
           row.dataset.reported = String(Boolean(item.report_reason));
-          row.dataset.search = [item.member_id, item.guild_id, item.reason, item.report_reason || ""].join(" ").toLowerCase();
+          row.dataset.search = [item.member_id, item.guild_id, item.guild_name || "", item.reason, item.report_reason || ""].join(" ").toLowerCase();
           const member = document.createElement("td");
           const memberName = document.createElement("b"); memberName.textContent = "Member " + item.member_id;
-          const server = document.createElement("small"); server.textContent = "Server " + item.guild_id;
+          const server = document.createElement("small"); server.textContent = (item.guild_name || "Server") + " · " + item.guild_id;
           member.append(memberName, server);
           const reason = document.createElement("td"); reason.textContent = item.reason;
           const expiry = document.createElement("td"); expiry.textContent = item.timeout_until ? new Date(item.timeout_until * 1000).toLocaleString() : "—";
