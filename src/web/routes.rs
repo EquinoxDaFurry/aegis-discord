@@ -744,10 +744,13 @@ async fn save_settings(
         || !valid_ids(&input.exempt_role_ids) || !valid_ids(&input.ignored_channel_ids) {
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
-    let valid_templates = ["timeout", "detection", "report"].iter().all(|key| {
-        input.message_templates.get(*key).is_some_and(|template| template.content.len() <= 5000)
-    });
-    if !valid_templates { return Err(StatusCode::UNPROCESSABLE_ENTITY); }
+    let mut message_templates = default_message_templates();
+    for key in ["timeout", "detection", "report"] {
+        if let Some(template) = input.message_templates.get(key) {
+            if template.content.len() > 5000 { return Err(StatusCode::UNPROCESSABLE_ENTITY); }
+            message_templates.insert(key.to_owned(), template.clone());
+        }
+    }
     let settings = ServerSettings {
         enabled: input.enabled,
         text_detection: input.text_detection,
@@ -761,7 +764,7 @@ async fn save_settings(
         exempt_role_ids: input.exempt_role_ids,
         ignored_channel_ids: input.ignored_channel_ids,
         logging_channel_id,
-        message_templates: input.message_templates,
+        message_templates,
     };
     let json = serde_json::to_string(&settings).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let updated = now();
