@@ -41,6 +41,8 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
         reporter_id TEXT NOT NULL, report_reason TEXT NOT NULL, created_at INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending'
     )").execute(pool).await?;
+    sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_false_positive_reports_case ON false_positive_reports(case_id)")
+        .execute(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS dashboard_sessions (
         token_hash TEXT PRIMARY KEY NOT NULL, discord_user_id TEXT NOT NULL,
         expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
