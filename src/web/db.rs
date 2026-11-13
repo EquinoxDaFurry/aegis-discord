@@ -55,5 +55,14 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     sqlx::query("CREATE TABLE IF NOT EXISTS dashboard_oauth_states (
         state_hash TEXT PRIMARY KEY NOT NULL, expires_at INTEGER NOT NULL
     )").execute(pool).await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS analytics_hourly (
+        guild_id TEXT NOT NULL, hour_start INTEGER NOT NULL,
+        messages INTEGER NOT NULL DEFAULT 0, scam_detections INTEGER NOT NULL DEFAULT 0,
+        confidence_sum REAL NOT NULL DEFAULT 0, confidence_count INTEGER NOT NULL DEFAULT 0,
+        deleted_messages INTEGER NOT NULL DEFAULT 0, timeouts INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(guild_id, hour_start)
+    )").execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_analytics_hourly_guild_hour ON analytics_hourly(guild_id, hour_start)")
+        .execute(pool).await?;
     Ok(())
 }
