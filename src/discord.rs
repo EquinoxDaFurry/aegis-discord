@@ -641,6 +641,81 @@ impl EventHandler for Handler {
                     self.send_error_dm(&ctx, &format!("Could not open false-positive modal: {error}")).await;
                 }
             }
+            Interaction::Component(component) if component.data.custom_id.starts_with("aegis_fp_reverse:") => {
+                let owner_id = std::env::var("AEGIS_OWNER_ID").ok().and_then(|value| value.parse::<u64>().ok());
+                if owner_id != Some(component.user.id.get()) {
+                    let response = serenity::all::CreateInteractionResponseMessage::new()
+                        .content("❌ This action is restricted to the bot owner.").ephemeral(true);
+                    let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+                    return;
+                }
+                let Ok(root_id) = component.data.custom_id.trim_start_matches("aegis_fp_reverse:").parse::<u64>() else { return; };
+                let root = sqlx::query_as::<_, (String, String, String)>(
+                    "SELECT guild_id, member_id, original_message_url FROM moderation_cases WHERE case_id = ?"
+                ).bind(root_id.to_string()).fetch_optional(&self.analytics_db).await.ok().flatten();
+                let Some((source_guild, member_id, source_url)) = root else {
+                    let response = serenity::all::CreateInteractionResponseMessage::new().content("❌ The original moderation case could not be found.").ephemeral(true);
+                    let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+                    return;
+                };
+                let source_message_id = source_url.rsplit('/').next().unwrap_or_default().to_owned();
+                let mut case_ids = vec![root_id.to_string()];
+                if let Ok(linked) = sqlx::query_scalar::<_, String>(
+                    "SELECT case_id FROM cross_server_actions WHERE source_guild_id = ? AND member_id = ? AND source_message_id = ? AND case_id IS NOT NULL"
+                ).bind(&source_guild).bind(&member_id).bind(&source_message_id)
+                    .fetch_all(&self.analytics_db).await {
+                    case_ids.extend(linked);
+                }
+                case_ids.sort();
+                case_ids.dedup();
+                let mut reversed = 0usize;
+                let mut skipped = 0usize;
+                for case_id in case_ids {
+                    let row = sqlx::query_as::<_, (String, String, Option<i64>, String)>(
+                        "SELECT guild_id, member_id, timeout_until, status FROM moderation_cases WHERE case_id = ?"
+                    ).bind(&case_id).fetch_optional(&self.analytics_db).await.ok().flatten();
+                    let Some((guild_id, target_user, recorded_until, status)) = row else { skipped += 1; continue; };
+                    let Some(recorded_until) = recorded_until else { skipped += 1; continue; };
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+                    if status != "active" || recorded_until <= now { skipped += 1; continue; }
+                    let endpoint = format!("https://discord.com/api/v10/guilds/{guild_id}/members/{target_user}");
+                    let member_response = self.http.get(&endpoint)
+                        .header("Authorization", format!("Bot {}", self.config.discord_token))
+                        .send().await;
+                    let Ok(member_response) = member_response else { skipped += 1; continue; };
+                    if !member_response.status().is_success() { skipped += 1; continue; }
+                    let member_json = member_response.json::<serde_json::Value>().await;
+                    let Ok(member_json) = member_json else { skipped += 1; continue; };
+                    let current_until = member_json.get("communication_disabled_until").and_then(serde_json::Value::as_str)
+                        .and_then(|value| time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc3339).ok())
+                        .map(|value| value.unix_timestamp());
+                    if current_until.is_none_or(|until| until <= now || (until - recorded_until).abs() > 60) {
+                        skipped += 1;
+                        continue;
+                    }
+                    let audit_reason = url::form_urlencoded::byte_serialize("Aegis owner false-positive network reversal".as_bytes()).collect::<String>();
+                    let response = self.http.patch(&endpoint)
+                        .header("Authorization", format!("Bot {}", self.config.discord_token))
+                        .header("X-Audit-Log-Reason", audit_reason)
+                        .json(&serde_json::json!({"communication_disabled_until": null}))
+                        .send().await;
+                    let Ok(response) = response else { skipped += 1; continue; };
+                    if !response.status().is_success() { skipped += 1; continue; }
+                    let _ = sqlx::query("INSERT OR IGNORE INTO moderation_reversals(case_id, reversed_by, reversal_reason, reversed_at) VALUES(?, ?, ?, ?)")
+                        .bind(&case_id).bind(owner_id.unwrap().to_string())
+                        .bind("False-positive network-wide reversal").bind(now)
+                        .execute(&self.analytics_db).await;
+                    let _ = sqlx::query("UPDATE moderation_cases SET status = 'reversed' WHERE case_id = ? AND status = 'active'")
+                        .bind(&case_id).execute(&self.analytics_db).await;
+                    let _ = sqlx::query("UPDATE false_positive_reports SET status = 'reviewed' WHERE case_id = ?")
+                        .bind(&case_id).execute(&self.analytics_db).await;
+                    reversed += 1;
+                }
+                let response = serenity::all::CreateInteractionResponseMessage::new()
+                    .content(format!("Network-wide reversal finished. Reversed: **{reversed}** · Skipped: **{skipped}**. Deleted messages are not restored."))
+                    .ephemeral(true);
+                let _ = component.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
+            }
             Interaction::Modal(modal) if modal.data.custom_id.starts_with("aegis_fp_modal:") => {
                 let mut id_parts = modal.data.custom_id.trim_start_matches("aegis_fp_modal:").split(':');
                 let Ok(log_id) = id_parts.next().unwrap_or_default().parse::<u64>() else { return; };
