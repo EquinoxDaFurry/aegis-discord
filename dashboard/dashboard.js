@@ -157,7 +157,21 @@ const initial=location.hash.replace("#","");if(initial&&document.getElementById(
       const profile = document.querySelector(".profile-meta");
       if (profile) { profile.querySelector("strong").textContent = data.user.username; profile.querySelector("small").textContent = "Discord account"; }
       const avatar = document.querySelector(".profile-avatar");
-      if (avatar) avatar.textContent = data.user.username.slice(0,1).toUpperCase();
+      if (avatar) {
+        avatar.textContent = data.user.username.slice(0, 1).toUpperCase();
+        if (data.user.avatar) {
+          const extension = data.user.avatar.startsWith("a_") ? "gif" : "png";
+          const image = document.createElement("img");
+          image.src = `https://cdn.discordapp.com/avatars/${encodeURIComponent(data.user.id)}/${encodeURIComponent(data.user.avatar)}.${extension}?size=64`;
+          image.alt = "";
+          image.draggable = false;
+          image.addEventListener("error", () => {
+            image.remove();
+            avatar.textContent = data.user.username.slice(0, 1).toUpperCase();
+          }, { once: true });
+          avatar.replaceChildren(image);
+        }
+      }
     } catch (error) {
       authButton.textContent = "Sign in with Discord";
       authButton.onclick = () => { location.href = "/auth/login"; };
