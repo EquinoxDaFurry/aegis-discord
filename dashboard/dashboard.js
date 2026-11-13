@@ -34,13 +34,6 @@ const initial=location.hash.replace("#","");if(initial&&document.getElementById(
 
 // Live Discord login and per-server settings.
 (async function dashboardBackend() {
-  const right = document.querySelector(".topbar-right");
-  const authButton = document.createElement("button");
-  authButton.className = "button button-secondary";
-  authButton.type = "button";
-  authButton.textContent = "Sign in with Discord";
-  right.appendChild(authButton);
-
   const picker = document.createElement("select");
   picker.id = "guild-picker";
   picker.setAttribute("aria-label", "Choose a Discord server");
@@ -125,11 +118,6 @@ const initial=location.hash.replace("#","");if(initial&&document.getElementById(
     try {
       const data = await api("/api/me");
       signedIn = true;
-      authButton.textContent = "Sign out · " + data.user.username;
-      authButton.onclick = async () => {
-        await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
-        location.reload();
-      };
       const manageable = data.guilds.filter(g => g.owner || ((BigInt(g.permissions || "0") & 40n) !== 0n));
       picker.style.display = manageable.length ? "block" : "none";
       picker.innerHTML = "";
@@ -173,11 +161,8 @@ const initial=location.hash.replace("#","");if(initial&&document.getElementById(
         }
       }
     } catch (error) {
-      authButton.textContent = "Sign in with Discord";
-      authButton.onclick = () => { location.href = "/auth/login"; };
       document.querySelector(".connection").innerHTML = "<i></i> SIGN-IN REQUIRED";
-      settingsPage.innerHTML = '<div class="panel" style="padding:24px"><h2>Connect your Discord account</h2><p>Sign in to see servers where you have Manage Server or Administrator permission and configure their settings.</p><button class="button button-primary" id="settings-login">Continue with Discord →</button></div>';
-      document.getElementById("settings-login").onclick = () => { location.href = "/auth/login"; };
+      settingsPage.innerHTML = '<div class="panel" style="padding:24px"><h2>Discord account not connected</h2><p>Open the Aegis website and use its dashboard link to connect your Discord account. You will be returned here after authorization.</p></div>';
       const demoName = document.querySelector(".profile-meta strong");
       if (demoName) demoName.textContent = "Not signed in";
       if (ownerNav) ownerNav.remove();
