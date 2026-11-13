@@ -16,16 +16,17 @@ const templates={
  detection:{title:"Detection alert",description:"Exact default audit-log embed posted in the configured logging channel.",content:"🚨 Scam Detected\nPossible scam content detected.\n\nUser\n{user}\\n\`{user_id}\`\n\nReason\n{reason}\n\nFlagged Content\n\`\`\`text\n{flagged_content}\n\`\`\`\n\nChannel\n{channel}\n\nDeleted\n{deleted}\n\nTimeout\n{timeout_status}\n\n[Button: ⚠ False Positive]"},
  report:{title:"False-positive confirmation",description:"Exact ephemeral confirmation shown after a report is successfully submitted.",content:"✅ False-positive report submitted."}
 };
+const defaultTemplates = JSON.parse(JSON.stringify(templates));
 let currentTemplate="timeout";
 const editor=document.getElementById("message-content");
-function renderTemplate(key){currentTemplate=key;const t=templates[key];document.querySelectorAll(".template-choice").forEach(b=>b.classList.toggle("selected",b.dataset.template===key));document.getElementById("template-title").textContent=t.title;document.getElementById("template-description").textContent=t.description;editor.value=t.content;document.getElementById("template-enabled").checked=true;updatePreview();document.getElementById("message-status").textContent="Preview template loaded"}
+function renderTemplate(key){currentTemplate=key;const t=templates[key];document.querySelectorAll(".template-choice").forEach(b=>b.classList.toggle("selected",b.dataset.template===key));document.getElementById("template-title").textContent=t.title;document.getElementById("template-description").textContent=t.description;editor.value=t.content;document.getElementById("template-enabled").checked=t.enabled!==false;updatePreview();document.getElementById("message-status").textContent="Preview template loaded"}
 let previewServerName = "Select a server";
 function updatePreview(){const example={user:"@sample_member",user_id:"123456789012345678",server:previewServerName,reason:"Image attachment matched a known scam campaign.",duration:"7",channel:"<#123456789012345678>",flagged_content:"[Flagged message content]",report_server:"Not configured",deleted:"true",timeout_status:"Timed out successfully"};let value=editor.value;for(const [key,val] of Object.entries(example))value=value.replaceAll("{"+key+"}",val);document.getElementById("message-preview").textContent=value}
 document.querySelectorAll(".template-choice").forEach(button=>button.addEventListener("click",()=>renderTemplate(button.dataset.template)));
 editor.addEventListener("input",()=>{updatePreview();document.getElementById("message-status").textContent="Unsaved preview changes"});
 document.getElementById("template-enabled").addEventListener("change",event=>{document.getElementById("message-status").textContent=event.target.checked?"Template enabled in preview":"Template disabled in preview"});
 document.querySelectorAll("[data-placeholder]").forEach(button=>button.addEventListener("click",()=>{const start=editor.selectionStart,end=editor.selectionEnd,token=button.dataset.placeholder;editor.setRangeText(token,start,end,"end");editor.focus();updatePreview();document.getElementById("message-status").textContent="Unsaved preview changes"}));
-document.getElementById("save-message").addEventListener("click",()=>{showToast("Preview only — the Rust API is not connected, so nothing has been saved.");document.getElementById("message-status").textContent="Not saved · backend not connected"});
+document.getElementById("save-message").addEventListener("click",()=>window.dispatchEvent(new Event("aegis:save-template")));
 const search=document.getElementById("case-search"),filter=document.getElementById("case-filter");
 function filterCases(){const q=(search.value||"").toLowerCase();document.querySelectorAll("#case-rows tr").forEach(row=>{const matches=row.dataset.search.includes(q);const status=filter.value==="all"||row.dataset.status===filter.value;row.classList.toggle("hidden-row",!(matches&&status))})}
 search.addEventListener("input",filterCases);filter.addEventListener("change",filterCases);
@@ -48,6 +49,47 @@ navigate("selector");
   let moderationData = [];
   let moderationRequest = 0;
   const loggingPage = document.getElementById("page-logging");
+
+  function populateMessageTemplates(settings) {
+    Object.assign(templates, JSON.parse(JSON.stringify(defaultTemplates)));
+    const saved = settings?.message_templates || {};
+    for (const key of Object.keys(templates)) {
+      if (saved[key]) {
+        templates[key].content = typeof saved[key].content === "string" ? saved[key].content : templates[key].content;
+        templates[key].enabled = saved[key].enabled !== false;
+      }
+    }
+    renderTemplate(currentTemplate);
+    document.getElementById("message-status").textContent = "Saved templates loaded for this server";
+  }
+
+  async function saveMessageTemplate() {
+    if (!activeGuild || !currentSettings) {
+      document.getElementById("message-status").textContent = "Select a server before saving";
+      return;
+    }
+    const status = document.getElementById("message-status");
+    status.textContent = "Saving…";
+    const messageTemplates = { ...(currentSettings.message_templates || {}) };
+    messageTemplates[currentTemplate] = {
+      enabled: document.getElementById("template-enabled").checked,
+      content: editor.value
+    };
+    const payload = { ...currentSettings, message_templates: messageTemplates };
+    try {
+      const saved = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings", {
+        method: "PUT", body: JSON.stringify(payload)
+      });
+      currentSettings = saved.settings;
+      templates[currentTemplate].content = editor.value;
+      templates[currentTemplate].enabled = document.getElementById("template-enabled").checked;
+      status.textContent = "Saved successfully";
+      showToast("Message template saved for this server.");
+    } catch (error) {
+      status.textContent = "Could not save: " + error.message;
+    }
+  }
+  window.addEventListener("aegis:save-template", saveMessageTemplate);
 
   function formatDate(value) {
     const date = new Date(Number(value) * 1000);
@@ -157,6 +199,10 @@ navigate("selector");
       document.getElementById("moderation-active").textContent = counts.active;
       document.getElementById("moderation-expired").textContent = counts.expired;
       document.getElementById("moderation-ended").textContent = counts.ended_early;
+      const overviewTimeouts = document.getElementById("overview-timeouts");
+      if (overviewTimeouts) overviewTimeouts.textContent = String(counts.active);
+      const timeoutNote = document.getElementById("overview-timeouts-note");
+      if (timeoutNote) timeoutNote.textContent = "Currently active · Discord source of truth";
       document.getElementById("moderation-source").textContent = data.logging_channel_id ? "Source: Discord logging channel" : "Logging channel not configured";
       if (data.warning) {
         warning.hidden = false;
@@ -259,6 +305,25 @@ navigate("selector");
       document.getElementById("analytics-confidence").textContent = totals.average_confidence == null ? "—" : (Number(totals.average_confidence)*100).toFixed(1)+"%";
       document.getElementById("analytics-deleted").textContent = Number(totals.deleted_messages || 0).toLocaleString();
       document.getElementById("analytics-timeouts").textContent = Number(totals.timeouts || 0).toLocaleString();
+      const overviewStats = {
+        "overview-scanned": totals.messages,
+        "overview-threats": totals.scam_detections,
+        "overview-removed": totals.deleted_messages
+      };
+      Object.entries(overviewStats).forEach(([id,value]) => {
+        const node = document.getElementById(id);
+        if (node) node.textContent = Number(value || 0).toLocaleString();
+      });
+      const overviewNotes = {
+        "overview-scanned-note": "Messages · " + analyticsRange,
+        "overview-threats-note": "Detections · " + analyticsRange,
+        "overview-removed-note": "Deleted · " + analyticsRange
+      };
+      Object.entries(overviewNotes).forEach(([id,value]) => {
+        const node = document.getElementById(id);
+        if (node) node.textContent = value;
+      });
+      document.getElementById("overview-data-notice").hidden = true;
       const period = analyticsRange==="day" ? "LAST 24 HOURS" : analyticsRange==="week" ? "LAST 7 DAYS" : "LAST 30 DAYS";
       document.getElementById("analytics-message-period").textContent = period;
       document.getElementById("analytics-scam-period").textContent = period;
@@ -512,6 +577,7 @@ navigate("selector");
     try {
       const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings");
       currentSettings = data.settings;
+      populateMessageTemplates(data.settings);
       await loadProtectionOptions();
       const channel = document.getElementById("setting-log-channel");
       if (channel) channel.value = data.settings.logging_channel_id || "";
@@ -583,7 +649,7 @@ navigate("selector");
     const heading = document.createElement("strong");
     heading.textContent = enabled === undefined ? "Configuration unavailable" : enabled ? "Aegis protection enabled" : "Aegis protection disabled";
     const sub = document.createElement("small");
-    sub.textContent = "Saved dashboard configuration · bot integration pending";
+    sub.textContent = currentSettings ? "Live server configuration" : "Configuration unavailable";
     copy.append(heading, sub);
     status.replaceChildren(icon, copy);
     const enabledLabel = document.getElementById("overview-enabled");
@@ -591,10 +657,13 @@ navigate("selector");
     enabledLabel.className = enabled ? "enabled" : "muted-state";
     document.getElementById("overview-timeout-days").textContent = currentSettings ? currentSettings.timeout_days + " DAYS" : "—";
     document.getElementById("overview-threshold").textContent = currentSettings ? (Number(currentSettings.delete_threshold) * 100).toFixed(1) + "%" : "—";
+    document.getElementById("overview-data-notice").hidden = true;
   }
 
   function enterServer(guild) {
     activeGuild = guild;
+    Object.assign(templates, JSON.parse(JSON.stringify(defaultTemplates)));
+    currentTemplate = "timeout";
     previewServerName = guild.name;
     updatePreview();
     currentSettings = null;
@@ -615,6 +684,7 @@ navigate("selector");
     loggingForm();
     navigate("overview");
     loadSettings();
+    loadAnalytics();
     loadBetaStatus();
     if (document.getElementById("page-moderation").classList.contains("active")) loadModeration();
   }
