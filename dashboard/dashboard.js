@@ -27,9 +27,7 @@ editor.addEventListener("input",()=>{updatePreview();document.getElementById("me
 document.getElementById("template-enabled").addEventListener("change",event=>{document.getElementById("message-status").textContent=event.target.checked?"Template enabled in preview":"Template disabled in preview"});
 document.querySelectorAll("[data-placeholder]").forEach(button=>button.addEventListener("click",()=>{const start=editor.selectionStart,end=editor.selectionEnd,token=button.dataset.placeholder;editor.setRangeText(token,start,end,"end");editor.focus();updatePreview();document.getElementById("message-status").textContent="Unsaved preview changes"}));
 document.getElementById("save-message").addEventListener("click",()=>window.dispatchEvent(new Event("aegis:save-template")));
-const search=document.getElementById("case-search"),filter=document.getElementById("case-filter");
-function filterCases(){const q=(search.value||"").toLowerCase();document.querySelectorAll("#case-rows tr").forEach(row=>{const matches=row.dataset.search.includes(q);const status=filter.value==="all"||row.dataset.status===filter.value;row.classList.toggle("hidden-row",!(matches&&status))})}
-search.addEventListener("input",filterCases);filter.addEventListener("change",filterCases);
+// Moderation and owner tables bind their own search/filter controls below.
 
 document.querySelectorAll(".nav-link").forEach(link=>link.addEventListener("click",()=>{}));
 navigate("selector");
