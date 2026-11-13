@@ -136,17 +136,6 @@ Flagged Content:
 ```
 
 
-If this was a mistake:
-
-{report_server}
-
-
-Please include:
-- The flagged message
-- What you intended to send
-- Any useful investigation details
-
-
 -# Anti-Scam Protection System"#.to_owned() }),
         ("detection".to_owned(), MessageTemplate { enabled: true, content: r#"🚨 Scam Detected
 Possible scam content detected.
