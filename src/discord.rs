@@ -503,8 +503,14 @@ impl EventHandler for Handler {
                                 self.send_error_dm(&ctx, &format!("Could not update false-positive button: {error}")).await;
                             }
                         }
+                        let report_settings = self.guild_settings(data.guild_id).await;
+                        let confirmation = Self::render_template(&report_settings, "report",
+                            "✅ False-positive report submitted.",
+                            &[("user", data.user_mention.clone()), ("server", data.guild_name.clone()),
+                              ("reason", reason.clone())], 1900)
+                            .unwrap_or_else(|| "False-positive report submitted.".to_owned());
                         let response = serenity::all::CreateInteractionResponseMessage::new()
-                            .content("✅ False-positive report submitted.").ephemeral(true);
+                            .content(confirmation).ephemeral(true);
                         let _ = modal.create_response(&ctx.http, CreateInteractionResponse::Message(response)).await;
                     }
                     Err(error) => {
