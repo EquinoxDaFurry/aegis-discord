@@ -724,20 +724,26 @@ async fn save_settings(
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
     let logging_channel_id = input.logging_channel_id.filter(|v| !v.trim().is_empty());
-    if let Some(channel_id) = logging_channel_id.as_deref() {
-        let response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/channels", guild.id))
-            .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
-            .send().await.map_err(|error| {
-                tracing::error!(%error, guild_id = %guild.id, "Could not validate selected logging channel");
-                StatusCode::BAD_GATEWAY
-            })?;
-        if !response.status().is_success() { return Err(StatusCode::BAD_GATEWAY); }
-        let channels: Vec<Value> = response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
-        let valid_channel = channels.iter().any(|channel| {
-            channel.get("id").and_then(Value::as_str) == Some(channel_id)
-                && matches!(channel.get("type").and_then(Value::as_u64), Some(0 | 5))
-        });
-        if !valid_channel { return Err(StatusCode::UNPROCESSABLE_ENTITY); }
+    let previous_json = sqlx::query_as::<_, (String,)>("SELECT config_json FROM guild_configs WHERE guild_id = ?")
+        .bind(&guild.id).fetch_optional(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let previous_channel = previous_json.and_then(|(json,)| serde_json::from_str::<Value>(&json).ok())
+        .and_then(|value| value.get("logging_channel_id").and_then(Value::as_str).map(str::to_owned));
+    if logging_channel_id != previous_channel {
+        if let Some(channel_id) = logging_channel_id.as_deref() {
+            let response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/channels", guild.id))
+                .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
+                .send().await.map_err(|error| {
+                    tracing::error!(%error, guild_id = %guild.id, "Could not validate selected logging channel");
+                    StatusCode::BAD_GATEWAY
+                })?;
+            if !response.status().is_success() { return Err(StatusCode::BAD_GATEWAY); }
+            let channels: Vec<Value> = response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+            let valid_channel = channels.iter().any(|channel| {
+                channel.get("id").and_then(Value::as_str) == Some(channel_id)
+                    && matches!(channel.get("type").and_then(Value::as_u64), Some(0 | 5))
+            });
+            if !valid_channel { return Err(StatusCode::UNPROCESSABLE_ENTITY); }
+        }
     }
     let valid_ids = |ids: &[String]| ids.len() <= 250 && ids.iter().all(|id| !id.is_empty() && id.len() <= 25 && id.chars().all(|c| c.is_ascii_digit()));
     if logging_channel_id.as_ref().is_some_and(|v| !v.chars().all(|c| c.is_ascii_digit()) || v.len() > 25)
