@@ -553,6 +553,7 @@ fn discord_timestamp_unix(value: &str) -> Option<i64> {
     time::OffsetDateTime::parse(value, &format).ok().map(|date| date.unix_timestamp())
 }
 
+// Owner-only API: every request is authorized against the configured Discord account ID.
 async fn owner_cases(
     State(state): State<AppState>, headers: HeaderMap,
 ) -> Result<Json<OwnerCasesResponse>, StatusCode> {
