@@ -557,6 +557,8 @@ async fn owner_cases(
 ) -> Result<Json<OwnerCasesResponse>, StatusCode> {
     let (user_id, _, _, _) = session_user(&headers, &state.db).await?;
     require_owner(&user_id, &state)?;
+    sqlx::query("UPDATE moderation_cases SET status = 'expired' WHERE status = 'active' AND timeout_until IS NOT NULL AND timeout_until <= ?")
+        .bind(now()).execute(&state.db).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let rows = sqlx::query(
         "SELECT c.case_id, c.guild_id, c.member_id, c.reason, c.timeout_until, c.status, c.created_at, c.original_message_url, r.report_reason, r.reporter_id, r.created_at AS report_created_at FROM moderation_cases c LEFT JOIN false_positive_reports r ON r.case_id = c.case_id WHERE c.status IN ('active', 'expired', 'reversed') ORDER BY c.created_at DESC LIMIT 200"
     ).fetch_all(&state.db).await.map_err(|error| {
@@ -597,6 +599,10 @@ async fn reverse_owner_case(
     ).bind(&case_id).fetch_optional(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(StatusCode::NOT_FOUND)?;
     if case.3 != "active" { return Err(StatusCode::CONFLICT); }
+    let pending_report = sqlx::query("SELECT 1 FROM false_positive_reports WHERE case_id = ? AND status = 'pending'")
+        .bind(&case_id).fetch_optional(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.is_some();
+    if !pending_report { return Err(StatusCode::FORBIDDEN); }
     if sqlx::query("SELECT 1 FROM moderation_reversals WHERE case_id = ?")
         .bind(&case_id).fetch_optional(&state.db).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.is_some() {
