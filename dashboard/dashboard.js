@@ -321,7 +321,10 @@ navigate("selector");
       renderProtectionDropdown("protection-channels-options", data.channels, "#");
       const loggingSelect = document.getElementById("setting-log-channel");
       if (loggingSelect) {
-        loggingSelect.replaceChildren(new Option("Use logging identifier fallback", ""));
+        const placeholder = new Option("Select a logging channel…", "");
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        loggingSelect.replaceChildren(placeholder);
         (data.channels || []).forEach(channel => loggingSelect.add(new Option("#" + channel.name, channel.id)));
         if (currentSettings?.logging_channel_id) loggingSelect.value = currentSettings.logging_channel_id;
       }
