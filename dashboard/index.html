@@ -186,7 +186,45 @@ If you believe this is a mistake, please submit a false-positive report so the s
           </article>
           <div class="notice moderation-footnote"><span class="notice-mark">i</span><div><strong>How this history works</strong><p>Records are read directly from Aegis's Discord logging channel. The dashboard does not create duplicate moderation records. Historical timeout status is inferred from the member's current Discord timeout and the configured timeout duration.</p></div></div>
         </section>
-        <section class="page" id="page-protection"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / PROTECTION</div><h1>Protection</h1><p>Configure Aegis detection and automated response.</p></div></div><div class="panel placeholder-panel"><span>⬡</span><h2>Protection settings</h2><p>Text and image detection, deletion thresholds, and response controls will live here.</p></div></section>
+        <section class="page" id="page-protection">
+          <div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / PROTECTION</div><h1>Protection</h1><p>Configure detection and automated responses for <strong id="protection-server-name">your server</strong>.</p></div><div class="heading-actions"><span class="status-chip">PER-SERVER CONFIGURATION</span></div></div>
+          <form id="protection-form">
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Detection</h2><p>Choose what Aegis scans and how confident a match must be.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Enable protection</b><small>Master switch for Aegis protection in this server.</small></span><input id="protection-enabled" type="checkbox"><i class="switch"></i></label>
+                <label class="protection-setting"><span><b>Text scam detection</b><small>Scan message text for known scam patterns.</small></span><input id="protection-text" type="checkbox"><i class="switch"></i></label>
+                <label class="protection-setting"><span><b>Image scam detection</b><small>Check images against known scam campaigns.</small></span><input id="protection-image" type="checkbox"><i class="switch"></i></label>
+                <div class="protection-control"><label for="protection-threshold">IMAGE MATCH CONFIDENCE THRESHOLD</label><div class="range-line"><input id="protection-threshold" type="range" min="0.5" max="1" step="0.005"><output id="protection-threshold-value">80.5%</output></div><small>Higher values require a stronger image match before action.</small></div>
+              </div>
+            </div>
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Automatic enforcement</h2><p>Choose what happens when Aegis detects a qualifying scam.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Automatic message deletion</b><small>Delete the detected message.</small></span><input id="protection-delete" type="checkbox"><i class="switch"></i></label>
+                <label class="protection-setting"><span><b>Automatic timeouts</b><small>Temporarily restrict the detected account.</small></span><input id="protection-timeout" type="checkbox"><i class="switch"></i></label>
+                <div class="protection-control"><label for="protection-timeout-days">DEFAULT TIMEOUT DURATION</label><div class="inline-input"><input id="protection-timeout-days" type="number" min="1" max="30" step="1"><span>days</span></div><small>Between 1 and 30 days.</small></div>
+              </div>
+            </div>
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Exemptions</h2><p>Exclude trusted members and channels from automated detection.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Exempt administrators</b><small>Do not apply automatic detection actions to server administrators.</small></span><input id="protection-admins" type="checkbox"><i class="switch"></i></label>
+                <div class="protection-control"><label for="protection-roles">EXEMPT ROLES</label><select id="protection-roles" multiple size="5" aria-describedby="protection-roles-help"></select><small id="protection-roles-help">Use Ctrl (Windows/Linux) or Command (Mac) to select multiple roles.</small></div>
+                <div class="protection-control"><label for="protection-channels">IGNORED CHANNELS</label><select id="protection-channels" multiple size="5" aria-describedby="protection-channels-help"></select><small id="protection-channels-help">Messages in selected channels will be excluded from detection.</small></div>
+              </div>
+            </div>
+            <div class="protection-section">
+              <div class="panel-heading"><div><h2>Advanced</h2><p>Test detection safely without applying moderation actions.</p></div></div>
+              <div class="protection-grid">
+                <label class="protection-setting"><span><b>Dry-run mode</b><small>Continue detecting and logging, but do not delete messages or timeout users.</small></span><input id="protection-dry-run" type="checkbox"><i class="switch"></i></label>
+                <div class="protection-info"><span>◷</span><div><b>Detection cooldown</b><small>Fixed cooldown · not configurable per server.</small></div></div>
+              </div>
+            </div>
+            <div class="protection-save"><span id="protection-status" role="status" aria-live="polite">Loading server settings…</span><button class="button button-primary" type="submit">Save protection settings →</button></div>
+          </form>
+          <p class="protection-disclaimer">Settings are saved separately for each server. They will be applied to live Discord moderation during the later bot integration.</p>
+        </section>
         <section class="page" id="page-automod"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / AUTOMOD</div><h1>Automod</h1><p>Fine-tune automated moderation for this server.</p></div></div><div class="panel placeholder-panel"><span>⌁</span><h2>Automod rules</h2><p>Custom rules, allowlists, and future server-specific filters will be configured here.</p></div></section>
         <section class="page" id="page-logging"><div class="page-heading"><div><div class="eyebrow">SERVER CONFIGURATION / LOGGING</div><h1>Logging</h1><p>Choose where Aegis sends moderation and security events.</p></div></div><div class="panel placeholder-panel"><span>≡</span><h2>Logging configuration</h2><p>Channel selection and event categories will be connected to the bot configuration API.</p></div></section>
         <section class="page" id="page-analytics"><div class="page-heading"><div><div class="eyebrow">SERVER INSIGHTS / ANALYTICS</div><h1>Analytics</h1><p>Understand detection volume and moderation trends.</p></div></div><div class="panel placeholder-panel"><span>▥</span><h2>Server analytics</h2><p>Charts and historical statistics will appear here once event storage is implemented.</p></div></section>
