@@ -203,22 +203,21 @@ If you believe this is a mistake, please submit a false-positive report so the s
               <div class="protection-grid">
                 <label class="protection-setting"><span><b>Automatic message deletion</b><small>Delete the detected message.</small></span><input id="protection-delete" type="checkbox"><i class="switch"></i></label>
                 <label class="protection-setting"><span><b>Automatic timeouts</b><small>Temporarily restrict the detected account.</small></span><input id="protection-timeout" type="checkbox"><i class="switch"></i></label>
-                <div class="protection-control"><label for="protection-timeout-days">DEFAULT TIMEOUT DURATION</label><div class="inline-input"><input id="protection-timeout-days" type="number" min="1" max="30" step="1"><span>days</span></div><small>Between 1 and 30 days.</small></div>
+                <div class="protection-control"><label for="protection-timeout-days">DEFAULT TIMEOUT DURATION</label><div class="inline-input"><input id="protection-timeout-days" type="number" min="1" max="7" step="1"><span>days</span></div><small>Between 1 and 30 days.</small></div>
               </div>
             </div>
             <div class="protection-section">
               <div class="panel-heading"><div><h2>Exemptions</h2><p>Exclude trusted members and channels from automated detection.</p></div></div>
               <div class="protection-grid">
                 <label class="protection-setting"><span><b>Exempt administrators</b><small>Do not apply automatic detection actions to server administrators.</small></span><input id="protection-admins" type="checkbox"><i class="switch"></i></label>
-                <div class="protection-control"><label for="protection-roles">EXEMPT ROLES</label><select id="protection-roles" multiple size="5" aria-describedby="protection-roles-help"></select><small id="protection-roles-help">Use Ctrl (Windows/Linux) or Command (Mac) to select multiple roles.</small></div>
-                <div class="protection-control"><label for="protection-channels">IGNORED CHANNELS</label><select id="protection-channels" multiple size="5" aria-describedby="protection-channels-help"></select><small id="protection-channels-help">Messages in selected channels will be excluded from detection.</small></div>
+                <div class="protection-control"><label>EXEMPT ROLES</label><details class="protection-dropdown" id="protection-roles-dropdown"><summary><span id="protection-roles-summary">Choose roles</span><span class="dropdown-chevron">⌄</span></summary><div class="protection-dropdown-menu" id="protection-roles-options"><p class="dropdown-empty">Loading roles…</p></div></details><small>Choose any roles that should be exempt from automatic detection.</small></div>
+                <div class="protection-control"><label>IGNORED CHANNELS</label><details class="protection-dropdown" id="protection-channels-dropdown"><summary><span id="protection-channels-summary">Choose channels</span><span class="dropdown-chevron">⌄</span></summary><div class="protection-dropdown-menu" id="protection-channels-options"><p class="dropdown-empty">Loading channels…</p></div></details><small>Messages in selected channels will be excluded from detection.</small></div>
               </div>
             </div>
             <div class="protection-section">
               <div class="panel-heading"><div><h2>Advanced</h2><p>Test detection safely without applying moderation actions.</p></div></div>
               <div class="protection-grid">
                 <label class="protection-setting"><span><b>Dry-run mode</b><small>Continue detecting and logging, but do not delete messages or timeout users.</small></span><input id="protection-dry-run" type="checkbox"><i class="switch"></i></label>
-                <div class="protection-info"><span>◷</span><div><b>Detection cooldown</b><small>Fixed cooldown · not configurable per server.</small></div></div>
               </div>
             </div>
             <div class="protection-save"><span id="protection-status" role="status" aria-live="polite">Loading server settings…</span><button class="button button-primary" type="submit">Save protection settings →</button></div>
