@@ -36,11 +36,6 @@
         <a class="nav-link" href="#analytics" data-page="analytics"><span class="nav-icon">▥</span>Analytics</a>
       </nav>
       <div class="sidebar-bottom">
-        <div class="owner-card">
-          <div class="owner-card-top"><span class="owner-crown">♛</span><span>BOT OWNER</span><span class="owner-pill">OWNER ONLY</span></div>
-          <p>Global moderation and bot controls.</p>
-          <a class="owner-link" href="#owner" data-page="owner">Open owner console <span>→</span></a>
-        </div>
         <div class="profile-row">
           <div class="profile-avatar" id="profile-avatar">E</div>
           <div class="profile-meta"><strong>Loading account…</strong><small>Discord account</small></div>
@@ -72,6 +67,16 @@
           <div id="selector-other-section" hidden>
             <div class="selector-section-heading other-heading"><div><h2>Other servers</h2><p>You can see these servers, but you don't have permission to manage them.</p></div><span class="section-indicator muted-indicator"><img src="https://aegisdiscord.pages.dev/assets/euheuh.svg" alt=""> VIEW ONLY</span></div>
             <div class="server-grid" id="server-grid-other"></div>
+          </div>
+          <div class="selector-owner-wrap" id="selector-owner-wrap" hidden>
+            <div class="selector-owner-card">
+              <div class="selector-owner-copy">
+                <div class="owner-card-top"><span class="owner-crown">♛</span><span>BOT OWNER</span><span class="owner-pill">PRIVATE</span></div>
+                <h2>Global owner console</h2>
+                <p>Review Aegis moderation actions and manage global bot operations across all servers.</p>
+              </div>
+              <a class="button button-primary" href="#owner" data-page-link="owner">Open owner console <span>→</span></a>
+            </div>
           </div>
         </section>
         <section class="page" id="page-overview">
