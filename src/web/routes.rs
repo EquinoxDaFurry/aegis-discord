@@ -24,6 +24,7 @@ struct AppState {
     bot_token: String,
     logging_identifier: String,
     timeout_days: u64,
+    owner_id: Option<String>,
     http: reqwest::Client,
     runtime_info: SharedRuntimeInfo,
 }
@@ -76,6 +77,7 @@ struct UserView {
 struct MeResponse {
     user: UserView,
     guilds: Vec<DiscordGuild>,
+    is_owner: bool,
 }
 
 #[derive(Deserialize)]
@@ -512,6 +514,153 @@ async fn moderation(
         truncated, warning: None, incidents }))
 }
 
+
+#[derive(Serialize)]
+struct OwnerCase {
+    case_id: String,
+    guild_id: String,
+    member_id: String,
+    reason: String,
+    timeout_until: Option<i64>,
+    status: String,
+    created_at: i64,
+    original_message_url: Option<String>,
+    report_reason: Option<String>,
+    reporter_id: Option<String>,
+    report_created_at: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct OwnerCasesResponse { cases: Vec<OwnerCase> }
+
+#[derive(Deserialize)]
+struct ReverseCaseInput { reason: String }
+
+#[derive(Serialize)]
+struct OwnerActionResponse { success: bool, message: String }
+
+fn require_owner(user_id: &str, state: &AppState) -> Result<(), StatusCode> {
+    if state.owner_id.as_deref().is_some_and(|owner| owner == user_id) {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
+}
+
+fn discord_timestamp_unix(value: &str) -> Option<i64> {
+    let format = time::format_description::well_known::Rfc3339;
+    time::OffsetDateTime::parse(value, &format).ok().map(|date| date.unix_timestamp())
+}
+
+async fn owner_cases(
+    State(state): State<AppState>, headers: HeaderMap,
+) -> Result<Json<OwnerCasesResponse>, StatusCode> {
+    let (user_id, _, _, _) = session_user(&headers, &state.db).await?;
+    require_owner(&user_id, &state)?;
+    let rows = sqlx::query(
+        "SELECT c.case_id, c.guild_id, c.member_id, c.reason, c.timeout_until, c.status, c.created_at, c.original_message_url, r.report_reason, r.reporter_id, r.created_at AS report_created_at FROM moderation_cases c LEFT JOIN false_positive_reports r ON r.case_id = c.case_id WHERE c.status IN ('active', 'expired', 'reversed') ORDER BY c.created_at DESC LIMIT 200"
+    ).fetch_all(&state.db).await.map_err(|error| {
+        tracing::error!(%error, "Could not load owner moderation cases");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let mut cases = Vec::with_capacity(rows.len());
+    for row in rows {
+        cases.push(OwnerCase {
+            case_id: row.try_get("case_id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            guild_id: row.try_get("guild_id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            member_id: row.try_get("member_id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            reason: row.try_get("reason").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            timeout_until: row.try_get("timeout_until").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            status: row.try_get("status").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            created_at: row.try_get("created_at").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            original_message_url: row.try_get("original_message_url").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            report_reason: row.try_get("report_reason").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            reporter_id: row.try_get("reporter_id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+            report_created_at: row.try_get("report_created_at").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+        });
+    }
+    Ok(Json(OwnerCasesResponse { cases }))
+}
+
+async fn reverse_owner_case(
+    State(state): State<AppState>, headers: HeaderMap, Path(case_id): Path<String>,
+    Json(input): Json<ReverseCaseInput>,
+) -> Result<Json<OwnerActionResponse>, StatusCode> {
+    let (owner_id, _, _, _) = session_user(&headers, &state.db).await?;
+    require_owner(&owner_id, &state)?;
+    let reason = input.reason.trim();
+    if reason.len() < 5 || reason.len() > 500 {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    let case = sqlx::query_as::<_, (String, String, Option<i64>, String)>(
+        "SELECT guild_id, member_id, timeout_until, status FROM moderation_cases WHERE case_id = ?"
+    ).bind(&case_id).fetch_optional(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(StatusCode::NOT_FOUND)?;
+    if case.3 != "active" { return Err(StatusCode::CONFLICT); }
+    if sqlx::query("SELECT 1 FROM moderation_reversals WHERE case_id = ?")
+        .bind(&case_id).fetch_optional(&state.db).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.is_some() {
+        return Err(StatusCode::CONFLICT);
+    }
+    if case.2.is_none_or(|until| until <= now()) {
+        let _ = sqlx::query("UPDATE moderation_cases SET status = 'expired' WHERE case_id = ? AND status = 'active'")
+            .bind(&case_id).execute(&state.db).await;
+        return Err(StatusCode::CONFLICT);
+    }
+
+    let member_response = state.http.get(format!("https://discord.com/api/v10/guilds/{}/members/{}", case.0, case.1))
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
+        .send().await.map_err(|error| {
+            tracing::error!(%error, case_id = %case_id, "Could not verify member timeout before owner reversal");
+            StatusCode::BAD_GATEWAY
+        })?;
+    if member_response.status() == StatusCode::NOT_FOUND { return Err(StatusCode::CONFLICT); }
+    if !member_response.status().is_success() {
+        let status = member_response.status();
+        let body = member_response.text().await.unwrap_or_default();
+        tracing::error!(%status, case_id = %case_id, response = %body.chars().take(300).collect::<String>(), "Discord member lookup failed during owner reversal");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let member: Value = member_response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let active_until = member.get("communication_disabled_until").and_then(Value::as_str)
+        .and_then(discord_timestamp_unix).is_some_and(|until| until > now());
+    if !active_until {
+        let _ = sqlx::query("UPDATE moderation_cases SET status = 'expired' WHERE case_id = ? AND status = 'active'")
+            .bind(&case_id).execute(&state.db).await;
+        return Err(StatusCode::CONFLICT);
+    }
+
+    let audit_reason = format!("Aegis owner reversal by {}: {}", owner_id, reason.chars().take(350).collect::<String>());
+    let response = state.http.patch(format!("https://discord.com/api/v10/guilds/{}/members/{}", case.0, case.1))
+        .header(header::AUTHORIZATION, format!("Bot {}", state.bot_token))
+        .header("X-Audit-Log-Reason", audit_reason)
+        .json(&serde_json::json!({ "communication_disabled_until": null }))
+        .send().await.map_err(|error| {
+            tracing::error!(%error, case_id = %case_id, "Discord timeout reversal request failed");
+            StatusCode::BAD_GATEWAY
+        })?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        tracing::error!(%status, case_id = %case_id, response = %body.chars().take(300).collect::<String>(), "Discord rejected owner timeout reversal");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+
+    let mut tx = state.db.begin().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let inserted = sqlx::query("INSERT INTO moderation_reversals(case_id, reversed_by, reversal_reason, reversed_at) VALUES(?, ?, ?, ?)")
+        .bind(&case_id).bind(&owner_id).bind(reason).bind(now()).execute(&mut *tx).await;
+    if inserted.is_err() {
+        let _ = tx.rollback().await;
+        return Err(StatusCode::CONFLICT);
+    }
+    sqlx::query("UPDATE moderation_cases SET status = 'reversed' WHERE case_id = ? AND status = 'active'")
+        .bind(&case_id).execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    sqlx::query("UPDATE false_positive_reports SET status = 'reviewed' WHERE case_id = ?")
+        .bind(&case_id).execute(&mut *tx).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    tx.commit().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(OwnerActionResponse { success: true, message: "Timeout reversed and audit record saved.".to_owned() }))
+}
+
 async fn health(State(state): State<AppState>) -> Result<Json<HealthResponse>, StatusCode> {
     sqlx::query("SELECT 1").execute(&state.db).await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
     Ok(Json(HealthResponse { status: "ok", database: "ok" }))
@@ -628,7 +777,8 @@ async fn oauth_callback(
 
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<MeResponse>, StatusCode> {
     let (id, username, avatar, guilds) = session_user(&headers, &state.db).await?;
-    Ok(Json(MeResponse { user: UserView { id, username, avatar }, guilds }))
+    let is_owner = state.owner_id.as_deref().is_some_and(|owner| owner == id);
+    Ok(Json(MeResponse { user: UserView { id, username, avatar }, guilds, is_owner }))
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Result<Response, StatusCode> {
@@ -860,7 +1010,8 @@ async fn analytics(
 }
 
 pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: String, oauth_redirect_uri: String, bot_token: String, logging_identifier: String, timeout_days: u64, runtime_info: SharedRuntimeInfo) -> Router {
-    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, http: reqwest::Client::new(), runtime_info };
+    let owner_id = std::env::var("AEGIS_OWNER_ID").ok().filter(|value| value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty());
+    let state = AppState { db, oauth_client_id, oauth_client_secret, oauth_redirect_uri, bot_token, logging_identifier, timeout_days, owner_id, http: reqwest::Client::new(), runtime_info };
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
@@ -868,6 +1019,8 @@ pub fn router(db: SqlitePool, oauth_client_id: String, oauth_client_secret: Stri
         .route("/auth/callback", get(oauth_callback))
         .route("/auth/logout", post(logout))
         .route("/api/me", get(me))
+        .route("/api/owner/cases", get(owner_cases))
+        .route("/api/owner/cases/:case_id/reverse", post(reverse_owner_case))
         .route("/api/runtime", get(get_runtime_info))
         .route("/api/guilds/:guild_id/beta-status", get(beta_status))
         .route("/api/guilds/:guild_id/moderation", get(moderation))
