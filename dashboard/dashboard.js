@@ -10,7 +10,6 @@ document.querySelectorAll("[data-page-link]").forEach(button=>button.addEventLis
 document.getElementById("mobile-menu").addEventListener("click",()=>document.getElementById("sidebar").classList.toggle("open"));
 document.querySelector(".notice-close")?.addEventListener("click",event=>event.currentTarget.closest(".notice").remove());
 document.getElementById("help-button").addEventListener("click",()=>showToast("Documentation link will be connected in a later build."));
-document.getElementById("server-picker").addEventListener("click",()=>showToast("Server switching will be populated from your Discord account after OAuth is connected."));
 const templates={
  timeout:{title:"Timeout notice",description:"Sent to the affected member when Aegis applies a timeout.",content:"Hey {user}, Aegis detected content that may be associated with a scam campaign in **{server}**.\n\nYour account has been timed out for {duration}.\n\nReason: {reason}\n\nIf you believe this is a mistake, please submit a false-positive report so the server team can review it."},
  detection:{title:"Detection alert",description:"Posted in the configured moderation log channel.",content:"Aegis detected a possible scam message.\n\nMember: {user}\nReason: {reason}\nCase: {case_id}\nModerator: {moderator}"},
