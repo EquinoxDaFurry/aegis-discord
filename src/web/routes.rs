@@ -706,7 +706,8 @@ async fn owner_case_details(
     if !response.status().is_success() { return Err(StatusCode::NOT_FOUND); }
     let message: Value = response.json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
     let embed = message.get("embeds").and_then(Value::as_array).into_iter().flatten()
-        .find(|embed| embed.get("title").and_then(Value::as_str).is_some_and(|title| title.contains("Scam Detected")));
+        .find(|embed| embed.get("title").and_then(Value::as_str).is_some_and(|title|
+            title.contains("Scam Detected") || title.contains("Cross Server Intelligence Network")));
     let flagged_content = embed.and_then(|embed| embed_field(embed, "Flagged Content"))
         .map(clean_code_block).unwrap_or_else(|| "Flagged content is unavailable in the stored Discord audit message.".to_owned());
     let image_urls = message.get("attachments").and_then(Value::as_array).into_iter().flatten()
