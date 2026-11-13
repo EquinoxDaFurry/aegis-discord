@@ -87,6 +87,92 @@ struct OAuthToken { access_token: String }
 #[derive(Deserialize)]
 struct DiscordUser { id: String, username: String, avatar: Option<String> }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct MessageTemplate {
+    enabled: bool,
+    content: String,
+}
+impl Default for MessageTemplate {
+    fn default() -> Self { Self { enabled: true, content: String::new() } }
+}
+
+fn default_message_templates() -> HashMap<String, MessageTemplate> {
+    HashMap::from([
+        ("timeout".to_owned(), MessageTemplate { enabled: true, content: r#"Hello {user_id},
+
+⚠️ **Security Alert**
+
+Your account sent content commonly associated with scam campaigns.
+
+Your account may have been compromised.
+
+Please:
+
+🔒 Reset your Discord password
+🛡️ Enable Two-Factor Authentication
+🦠 Run malware scans
+🔗 Review Authorized Apps
+
+
+You have been timed out in:
+
+**{server}**
+
+for **{duration} days**.
+
+
+Detected location:
+
+{channel}
+
+
+Flagged Content:
+
+\`\`\`text
+{flagged_content}
+\`\`\`
+
+
+If this was a mistake:
+
+{report_server}
+
+
+Please include:
+- The flagged message
+- What you intended to send
+- Any useful investigation details
+
+
+-# Anti-Scam Protection System"#.to_owned() }),
+        ("detection".to_owned(), MessageTemplate { enabled: true, content: r#"🚨 Scam Detected
+Possible scam content detected.
+
+User
+{user}
+`{user_id}`
+
+Reason
+{reason}
+
+Flagged Content
+\`\`\`text
+{flagged_content}
+\`\`\`
+
+Channel
+{channel}
+
+Deleted
+{deleted}
+
+Timeout
+{timeout_status}"#.to_owned() }),
+        ("report".to_owned(), MessageTemplate { enabled: true, content: "✅ False-positive report submitted.".to_owned() }),
+    ])
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct ServerSettings {
@@ -102,6 +188,8 @@ struct ServerSettings {
     exempt_role_ids: Vec<String>,
     ignored_channel_ids: Vec<String>,
     logging_channel_id: Option<String>,
+    #[serde(default = "default_message_templates")]
+    message_templates: HashMap<String, MessageTemplate>,
 }
 
 impl Default for ServerSettings {
@@ -119,6 +207,7 @@ impl Default for ServerSettings {
             exempt_role_ids: Vec::new(),
             ignored_channel_ids: Vec::new(),
             logging_channel_id: None,
+            message_templates: default_message_templates(),
         }
     }
 }
@@ -145,6 +234,8 @@ struct SettingsInput {
     exempt_role_ids: Vec<String>,
     ignored_channel_ids: Vec<String>,
     logging_channel_id: Option<String>,
+    #[serde(default = "default_message_templates")]
+    message_templates: HashMap<String, MessageTemplate>,
 }
 
 impl Default for SettingsInput {
@@ -163,6 +254,7 @@ impl Default for SettingsInput {
             exempt_role_ids: defaults.exempt_role_ids,
             ignored_channel_ids: defaults.ignored_channel_ids,
             logging_channel_id: defaults.logging_channel_id,
+            message_templates: defaults.message_templates,
         }
     }
 }
@@ -637,6 +729,10 @@ async fn save_settings(
         || !valid_ids(&input.exempt_role_ids) || !valid_ids(&input.ignored_channel_ids) {
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
+    let valid_templates = ["timeout", "detection", "report"].iter().all(|key| {
+        input.message_templates.get(*key).is_some_and(|template| template.content.len() <= 5000)
+    });
+    if !valid_templates { return Err(StatusCode::UNPROCESSABLE_ENTITY); }
     let settings = ServerSettings {
         enabled: input.enabled,
         text_detection: input.text_detection,
@@ -650,6 +746,7 @@ async fn save_settings(
         exempt_role_ids: input.exempt_role_ids,
         ignored_channel_ids: input.ignored_channel_ids,
         logging_channel_id,
+        message_templates: input.message_templates,
     };
     let json = serde_json::to_string(&settings).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let updated = now();
