@@ -207,8 +207,8 @@ impl Handler {
         best.map(|(confidence, reason)| (reason, flagged, confidence))
     }
 
-    async fn send_audit_log(&self, ctx: &Context, message: &Message, guild_name: &str, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, timeout_until: Option<i64>, images: Vec<(String, Vec<u8>)>, settings: &serde_json::Value) {
-        let Some(guild_id) = message.guild_id else { return };
+    async fn send_audit_log(&self, ctx: &Context, message: &Message, guild_name: &str, reason: &str, flagged_content: &str, deleted: bool, timeout_status: &str, timeout_until: Option<i64>, images: Vec<(String, Vec<u8>)>, settings: &serde_json::Value) -> Option<u64> {
+        let Some(guild_id) = message.guild_id else { return None };
         let channels = match guild_id.channels(&ctx.http).await {
             Ok(channels) => channels,
             Err(error) => { warn!(%error, "Could not inspect server channels for Aegis logging channel"); return; }
@@ -293,10 +293,12 @@ impl Handler {
                         images: images.clone(),
                     });
                 }
+                Some(log_message.id.get())
             }
             Err(error) => {
                 warn!(%error, "Could not send Aegis audit log");
                 self.send_error_dm(ctx, &format!("Failed to send scam audit log: {error}")).await;
+                None
             }
         }
     }
@@ -489,6 +491,11 @@ impl Handler {
             }
         };
 
+        let timeout_until = if timeout_status == "Timed out successfully" {
+            Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64
+                + timeout_days.saturating_mul(86_400) as i64)
+        } else { None };
+        let case_id = self.send_audit_log(ctx, message, &guild_name, reason, flagged_content, deleted, &timeout_status, timeout_until, images.clone(), settings).await;
         if timeout_status == "Timed out successfully" {
             self.record_analytics(guild_id.get(), 0, 0, None, 0, 1).await;
         }
@@ -506,7 +513,10 @@ impl Handler {
                   ("flagged_content", flagged_text), ("report_server", self.config.dm_report_server.clone()),
                   ("deleted", deleted.to_string()), ("timeout_status", timeout_status.clone())], 1900);
             if let Some(dm_text) = dm_text {
-                let mut dm = CreateMessage::new().content(dm_text);
+                let mut dm = CreateMessage::new().content(format!("{}\n\n**If this was wrong, please click the button below.**", dm_text));
+                if let Some(case_id) = case_id {
+                    dm = dm.components(vec![CreateActionRow::Buttons(vec![CreateButton::new(format!("aegis_fp_dm:{case_id}")).label("Report a false positive").style(ButtonStyle::Primary)])]);
+                }
                 for (filename, bytes) in &images {
                     dm = dm.add_file(CreateAttachment::bytes(bytes.clone(), filename.clone()));
                 }
@@ -516,11 +526,6 @@ impl Handler {
                 }
             }
         }
-        let timeout_until = if timeout_status == "Timed out successfully" {
-            Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64
-                + timeout_days.saturating_mul(86_400) as i64)
-        } else { None };
-        self.send_audit_log(ctx, message, &guild_name, reason, flagged_content, deleted, &timeout_status, timeout_until, images, settings).await;
         self.propagate_cross_server_detection(ctx, message, reason, flagged_content, confidence, settings).await;
     }
 }
@@ -604,8 +609,11 @@ impl EventHandler for Handler {
                     self.send_error_dm(&ctx, &format!("Could not respond to /help: {error}")).await;
                 }
             }
-            Interaction::Component(component) if component.data.custom_id == "aegis_false_positive" => {
-                let log_id = component.message.id.get();
+            Interaction::Component(component) if component.data.custom_id == "aegis_false_positive" || component.data.custom_id.starts_with("aegis_fp_dm:") => {
+                let log_id = if component.data.custom_id.starts_with("aegis_fp_dm:") {
+                    component.data.custom_id.trim_start_matches("aegis_fp_dm:").parse::<u64>().unwrap_or(0)
+                } else { component.message.id.get() };
+                if log_id == 0 { return; }
                 let already = self.false_positive_submitted.lock().map(|s| s.contains(&log_id)).unwrap_or(false);
                 if already {
                     let response = serenity::all::CreateInteractionResponseMessage::new()
@@ -668,7 +676,11 @@ impl EventHandler for Handler {
                     .field("Why was this a false positive?", reason.chars().take(1000).collect::<String>(), false)
                     .field("Marked By", format!("{}\n`{}`", modal.user.mention(), modal.user.id), false)
                     .field("Original Message", data.message_url, false);
-                let mut report_message = CreateMessage::new().embed(report);
+                let owner_id = std::env::var("AEGIS_OWNER_ID").ok().and_then(|value| value.parse::<u64>().ok());
+                let mut report_message = CreateMessage::new().content(owner_id.map(|id| format!("<@{id}>")).unwrap_or_default()).embed(report);
+                if let Some(owner_id) = owner_id {
+                    report_message = report_message.allowed_mentions(serenity::all::CreateAllowedMentions::new().users(vec![UserId::new(owner_id)]));
+                }
                 for (filename, bytes) in data.images {
                     report_message = report_message.add_file(CreateAttachment::bytes(bytes, filename));
                 }
