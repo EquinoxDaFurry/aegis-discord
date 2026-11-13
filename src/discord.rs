@@ -89,6 +89,25 @@ impl Handler {
             .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(value)))
     }
 
+    fn template_section(content: &str, label: &str) -> Option<String> {
+        let labels = ["User", "Reason", "Flagged Content", "Channel", "Deleted", "Timeout"];
+        let mut found = false;
+        let mut values = Vec::new();
+        for line in content.lines() {
+            if !found {
+                if line.trim() == label { found = true; }
+                continue;
+            }
+            if labels.iter().any(|next| *next != label && line.trim() == *next)
+                || line.trim_start().starts_with("[Button:") {
+                break;
+            }
+            values.push(line);
+        }
+        let value = values.join("\n").trim().to_owned();
+        (!value.is_empty()).then_some(value)
+    }
+
     fn render_template(
         settings: &serde_json::Value,
         key: &str,
@@ -206,23 +225,37 @@ impl Handler {
         let safe_reason = flagged_content.chars().take(1000).collect::<String>().replace("```", "'''");
         let user_mention = message.author.mention().to_string();
         let channel_mention = message.channel_id.mention().to_string();
-        let description = Self::render_template(settings, "detection", "Possible scam content detected.",
+        let detection_text = Self::render_template(settings, "detection",
+            "🚨 Scam Detected\nPossible scam content detected.\n\nUser\n{user}\n`{user_id}`\n\nReason\n{reason}\n\nFlagged Content\n```text\n{flagged_content}\n```\n\nChannel\n{channel}\n\nDeleted\n{deleted}\n\nTimeout\n{timeout_status}",
             &[("user", user_mention.clone()), ("user_id", message.author.id.to_string()),
               ("reason", reason.to_owned()), ("flagged_content", safe_reason.clone()),
               ("channel", channel_mention.clone()), ("deleted", deleted.to_string()),
               ("timeout_status", timeout_status.to_owned())], 3900)
-            .unwrap_or_else(|| "Possible scam content detected.".to_owned());
+            .unwrap_or_else(|| "🚨 Scam Detected\nPossible scam content detected.".to_owned());
+        let has_sections = Self::template_section(&detection_text, "User").is_some()
+            && Self::template_section(&detection_text, "Reason").is_some();
+        let description = if has_sections {
+            detection_text.lines().nth(1).unwrap_or("Possible scam content detected.").to_owned()
+        } else { detection_text.clone() };
+        let user_field = Self::template_section(&detection_text, "User")
+            .unwrap_or_else(|| format!("{}\n`{}`", user_mention, message.author.id));
+        let reason_field = Self::template_section(&detection_text, "Reason").unwrap_or_else(|| reason.to_owned());
+        let flagged_field = Self::template_section(&detection_text, "Flagged Content")
+            .unwrap_or_else(|| format!("```text\n{}\n```", safe_reason));
+        let channel_field = Self::template_section(&detection_text, "Channel").unwrap_or_else(|| channel_mention.clone());
+        let deleted_field = Self::template_section(&detection_text, "Deleted").unwrap_or_else(|| deleted.to_string());
+        let timeout_field = Self::template_section(&detection_text, "Timeout").unwrap_or_else(|| timeout_status.to_owned());
         let embed = CreateEmbed::new()
             .title("🚨 Scam Detected")
             .description(description)
             .timestamp(Timestamp::now())
             .color(0xED4245)
-            .field("User", format!("{}\n`{}`", user_mention, message.author.id), false)
-            .field("Reason", reason, false)
-            .field("Flagged Content", format!("```text\n{}\n```", safe_reason), false)
-            .field("Channel", channel_mention, true)
-            .field("Deleted", deleted.to_string(), true)
-            .field("Timeout", timeout_status, false);
+            .field("User", user_field, false)
+            .field("Reason", reason_field, false)
+            .field("Flagged Content", flagged_field, false)
+            .field("Channel", channel_field, true)
+            .field("Deleted", deleted_field, true)
+            .field("Timeout", timeout_field, false);
         let button = CreateButton::new("aegis_false_positive")
             .label("False Positive").emoji('⚠').style(ButtonStyle::Secondary);
         let mut audit = CreateMessage::new().embed(embed)
