@@ -386,6 +386,7 @@ navigate("selector");
     try {
       const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings");
       currentSettings = data.settings;
+      await loadProtectionOptions();
       const name = document.getElementById("settings-server-name");
       if (name) name.textContent = activeGuild.name;
       const enabled = document.getElementById("setting-enabled");
