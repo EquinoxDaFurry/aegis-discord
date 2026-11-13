@@ -287,6 +287,98 @@ navigate("selector");
     document.getElementById("live-settings-form").addEventListener("submit", saveSettings);
   }
 
+  function selectedValues(select) {
+    return [...select.selectedOptions].map(option => option.value);
+  }
+
+  function setMultiSelect(select, values) {
+    const selected = new Set(values || []);
+    [...select.options].forEach(option => { option.selected = selected.has(option.value); });
+  }
+
+  async function loadProtectionOptions() {
+    if (!activeGuild) return;
+    const status = document.getElementById("protection-status");
+    try {
+      const data = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/protection-options");
+      const roles = document.getElementById("protection-roles");
+      const channels = document.getElementById("protection-channels");
+      roles.replaceChildren(...data.roles.map(item => new Option(item.name, item.id)));
+      channels.replaceChildren(...data.channels.map(item => new Option("#" + item.name, item.id)));
+      if (currentSettings) {
+        setMultiSelect(roles, currentSettings.exempt_role_ids);
+        setMultiSelect(channels, currentSettings.ignored_channel_ids);
+      }
+    } catch (error) {
+      if (status) status.textContent = "Could not load Discord roles/channels: " + error.message;
+    }
+  }
+
+  function populateProtectionForm(settings) {
+    const name = document.getElementById("protection-server-name");
+    if (name) name.textContent = activeGuild?.name || "your server";
+    const values = {
+      "protection-enabled": settings.enabled,
+      "protection-text": settings.text_detection,
+      "protection-image": settings.image_detection,
+      "protection-delete": settings.auto_delete,
+      "protection-timeout": settings.auto_timeout,
+      "protection-admins": settings.exempt_admins,
+      "protection-dry-run": settings.dry_run
+    };
+    Object.entries(values).forEach(([id, value]) => {
+      const input = document.getElementById(id);
+      if (input) input.checked = Boolean(value);
+    });
+    const threshold = document.getElementById("protection-threshold");
+    if (threshold) {
+      threshold.value = settings.delete_threshold;
+      document.getElementById("protection-threshold-value").textContent = (Number(settings.delete_threshold) * 100).toFixed(1) + "%";
+    }
+    const timeout = document.getElementById("protection-timeout-days");
+    if (timeout) timeout.value = settings.timeout_days;
+    setMultiSelect(document.getElementById("protection-roles"), settings.exempt_role_ids);
+    setMultiSelect(document.getElementById("protection-channels"), settings.ignored_channel_ids);
+  }
+
+  function protectionPayload() {
+    const base = currentSettings || {};
+    return {
+      ...base,
+      enabled: document.getElementById("protection-enabled").checked,
+      text_detection: document.getElementById("protection-text").checked,
+      image_detection: document.getElementById("protection-image").checked,
+      delete_threshold: Number(document.getElementById("protection-threshold").value),
+      auto_delete: document.getElementById("protection-delete").checked,
+      auto_timeout: document.getElementById("protection-timeout").checked,
+      timeout_days: Number(document.getElementById("protection-timeout-days").value),
+      dry_run: document.getElementById("protection-dry-run").checked,
+      exempt_admins: document.getElementById("protection-admins").checked,
+      exempt_role_ids: selectedValues(document.getElementById("protection-roles")),
+      ignored_channel_ids: selectedValues(document.getElementById("protection-channels")),
+      logging_channel_id: base.logging_channel_id || null
+    };
+  }
+
+  async function saveProtectionSettings(event) {
+    event.preventDefault();
+    if (!activeGuild) return;
+    const status = document.getElementById("protection-status");
+    status.textContent = "Saving…";
+    const payload = protectionPayload();
+    try {
+      const saved = await api("/api/guilds/" + encodeURIComponent(activeGuild.id) + "/settings", {
+        method: "PUT", body: JSON.stringify(payload)
+      });
+      currentSettings = saved.settings;
+      status.textContent = "Saved successfully";
+      renderOverview();
+      showToast("Protection settings saved.");
+    } catch (error) {
+      status.textContent = "Could not save: " + error.message;
+    }
+  }
+
   async function loadSettings() {
     if (!activeGuild) return;
     const status = document.getElementById("live-settings-status");
@@ -304,7 +396,10 @@ navigate("selector");
       if (threshold) threshold.value = data.settings.delete_threshold;
       const channel = document.getElementById("setting-log-channel");
       if (channel) channel.value = data.settings.logging_channel_id || "";
+      populateProtectionForm(data.settings);
       if (status) status.textContent = data.updated_at ? "Saved settings loaded" : "Default settings · not saved yet";
+      const protectionStatus = document.getElementById("protection-status");
+      if (protectionStatus) protectionStatus.textContent = data.updated_at ? "Saved settings loaded" : "Default settings · not saved yet";
       renderOverview();
     } catch (error) {
       if (status) status.textContent = error.message;
@@ -317,6 +412,7 @@ navigate("selector");
     const status = document.getElementById("live-settings-status");
     status.textContent = "Saving…";
     const payload = {
+      ...(currentSettings || {}),
       enabled: document.getElementById("setting-enabled").checked,
       timeout_days: Number(document.getElementById("setting-timeout").value),
       delete_threshold: Number(document.getElementById("setting-threshold").value),
@@ -439,6 +535,11 @@ navigate("selector");
       navigate("selector");
     }
   }
+
+  document.getElementById("protection-form")?.addEventListener("submit", saveProtectionSettings);
+  document.getElementById("protection-threshold")?.addEventListener("input", event => {
+    document.getElementById("protection-threshold-value").textContent = (Number(event.target.value) * 100).toFixed(1) + "%";
+  });
 
   settingsForm();
   await initialize();
