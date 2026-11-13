@@ -161,7 +161,7 @@ async fn oauth_callback(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.rows_affected() == 1;
     if !valid { return Err(StatusCode::BAD_REQUEST); }
 
-    let token: OAuthToken = state.http.post("https://discord.com/api/oauth2/token")
+    let token_response = state.http.post("https://discord.com/api/oauth2/token")
         .form(&[
             ("client_id", state.oauth_client_id.as_str()),
             ("client_secret", state.oauth_client_secret.as_str()),
@@ -169,19 +169,52 @@ async fn oauth_callback(
             ("code", query.code.as_str()),
             ("redirect_uri", state.oauth_redirect_uri.as_str()),
         ])
-        .send().await.map_err(|_| StatusCode::BAD_GATEWAY)?
-        .error_for_status().map_err(|_| StatusCode::BAD_GATEWAY)?
-        .json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+        .send().await.map_err(|error| {
+            tracing::error!(%error, "Discord OAuth token request failed");
+            StatusCode::BAD_GATEWAY
+        })?;
+    let token_status = token_response.status();
+    if !token_status.is_success() {
+        let body = token_response.text().await.unwrap_or_default();
+        tracing::error!(status = %token_status, response = %body.chars().take(500).collect::<String>(), "Discord rejected OAuth token exchange");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let token: OAuthToken = token_response.json().await.map_err(|error| {
+        tracing::error!(%error, "Could not parse Discord OAuth token response");
+        StatusCode::BAD_GATEWAY
+    })?;
 
-    let user: DiscordUser = state.http.get("https://discord.com/api/users/@me")
-        .bearer_auth(&token.access_token).send().await.map_err(|_| StatusCode::BAD_GATEWAY)?
-        .error_for_status().map_err(|_| StatusCode::BAD_GATEWAY)?
-        .json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let user_response = state.http.get("https://discord.com/api/users/@me")
+        .bearer_auth(&token.access_token).send().await.map_err(|error| {
+            tracing::error!(%error, "Discord current-user request failed");
+            StatusCode::BAD_GATEWAY
+        })?;
+    let user_status = user_response.status();
+    if !user_status.is_success() {
+        let body = user_response.text().await.unwrap_or_default();
+        tracing::error!(status = %user_status, response = %body.chars().take(500).collect::<String>(), "Discord rejected current-user request");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let user: DiscordUser = user_response.json().await.map_err(|error| {
+        tracing::error!(%error, "Could not parse Discord current-user response");
+        StatusCode::BAD_GATEWAY
+    })?;
 
-    let guilds: Vec<DiscordGuild> = state.http.get("https://discord.com/api/users/@me/guilds")
-        .bearer_auth(&token.access_token).send().await.map_err(|_| StatusCode::BAD_GATEWAY)?
-        .error_for_status().map_err(|_| StatusCode::BAD_GATEWAY)?
-        .json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let guilds_response = state.http.get("https://discord.com/api/users/@me/guilds")
+        .bearer_auth(&token.access_token).send().await.map_err(|error| {
+            tracing::error!(%error, "Discord guild-list request failed");
+            StatusCode::BAD_GATEWAY
+        })?;
+    let guilds_status = guilds_response.status();
+    if !guilds_status.is_success() {
+        let body = guilds_response.text().await.unwrap_or_default();
+        tracing::error!(status = %guilds_status, response = %body.chars().take(500).collect::<String>(), "Discord rejected guild-list request");
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+    let guilds: Vec<DiscordGuild> = guilds_response.json().await.map_err(|error| {
+        tracing::error!(%error, "Could not parse Discord guild-list response");
+        StatusCode::BAD_GATEWAY
+    })?;
 
     let session = random_token();
     let avatar = user.avatar.clone();
