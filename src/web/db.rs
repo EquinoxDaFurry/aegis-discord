@@ -43,7 +43,16 @@ async fn migrate(pool: &SqlitePool) -> Result<()> {
     )").execute(pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS dashboard_sessions (
         token_hash TEXT PRIMARY KEY NOT NULL, discord_user_id TEXT NOT NULL,
-        expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL
+        expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+        access_token TEXT NOT NULL DEFAULT '', username TEXT NOT NULL DEFAULT '',
+        avatar TEXT
+    )").execute(pool).await?;
+    // Upgrade databases created by the initial dashboard preview.
+    let _ = sqlx::query("ALTER TABLE dashboard_sessions ADD COLUMN access_token TEXT NOT NULL DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE dashboard_sessions ADD COLUMN username TEXT NOT NULL DEFAULT ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE dashboard_sessions ADD COLUMN avatar TEXT").execute(pool).await;
+    sqlx::query("CREATE TABLE IF NOT EXISTS dashboard_oauth_states (
+        state_hash TEXT PRIMARY KEY NOT NULL, expires_at INTEGER NOT NULL
     )").execute(pool).await?;
     Ok(())
 }
