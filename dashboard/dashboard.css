@@ -88,7 +88,7 @@ button.server-card:hover{background:#12161b;border-color:#69404a}
 .protection-section .panel-heading{margin-bottom:14px}
 .protection-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .protection-setting,.protection-control,.protection-info{min-width:0;padding:14px;background:#101216;border:1px solid #252a31;border-radius:5px}
-.protection-setting{display:flex;align-items:center;justify-content:space-between;gap:15px;cursor:pointer}
+.protection-setting{display:flex;align-items:center;justify-content:space-between;gap:15px;cursor:pointer}.protection-setting>.switch{display:block;flex:0 0 29px}
 .protection-setting>span{min-width:0}
 .protection-setting b,.protection-setting small,.protection-info b,.protection-info small{display:block}
 .protection-setting b,.protection-info b{font-size:10px;font-weight:600}
