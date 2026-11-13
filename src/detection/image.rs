@@ -26,6 +26,9 @@ impl ImageDetector {
         Self { records: db.image_hashes.clone(), exact, cache: RwLock::new((HashMap::new(), VecDeque::new())), cache_limit, threshold }
     }
     pub fn scan(&self, bytes: &[u8]) -> anyhow::Result<Option<ImageScan>> {
+        self.scan_with_threshold(bytes, self.threshold)
+    }
+    pub fn scan_with_threshold(&self, bytes: &[u8], threshold: f64) -> anyhow::Result<Option<ImageScan>> {
         if bytes.is_empty() { return Ok(None); }
         let sha = hex::encode(Sha256::digest(bytes));
         if let Some(index) = self.exact.get(&sha) {
@@ -64,7 +67,7 @@ impl ImageDetector {
             let d = similarity(hashes.1, record.dhash);
             let a = similarity(hashes.2, record.ahash);
             let confidence = p * PHASH_WEIGHT + d * DHASH_WEIGHT + a * AHASH_WEIGHT;
-            if confidence >= self.threshold && p >= MIN_PHASH_SIMILARITY && d >= MIN_DHASH_SIMILARITY {
+            if confidence >= threshold && p >= MIN_PHASH_SIMILARITY && d >= MIN_DHASH_SIMILARITY {
                 matches.push(ImageMatch { filename: record.filename.clone(), campaign: record.campaign.clone(), confidence });
             }
         }
